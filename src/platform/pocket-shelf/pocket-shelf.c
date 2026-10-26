@@ -251,7 +251,85 @@ void PSStateReturn(struct PSState* s, double now) {
 	s->card = inSlot(0, 1);
 	beginReturn(s, now);
 }
+static float boundedScroll(float value, size_t count) {
+	return fmaxf(0, fminf(count ? (float) count - 1 : 0, value));
+}
+bool PSGestureBegin(struct PSState* s, float x, float y, float pixelsPerCard, double now) {
+	if (s->mode != PS_BROWSE || s->gesture.active)
+		return false;
+	s->gesture = (struct PSGesture) { .active = true,
+	                                  .axis = PS_GESTURE_PENDING,
+	                                  .x = x,
+	                                  .y = y,
+	                                  .lastX = x,
+	                                  .lastY = y,
+	                                  .startScroll = s->scroll,
+	                                  .pitch = fmaxf(1, pixelsPerCard),
+	                                  .lastTime = now };
+	return true;
+}
+bool PSGestureMove(struct PSState* s, size_t count, float x, float y, double now) {
+	struct PSGesture* g = &s->gesture;
+	if (!g->active)
+		return false;
+	float dx = x - g->x, dy = y - g->y;
+	double dt = now - g->lastTime;
+	if (g->axis == PS_GESTURE_PENDING && hypotf(dx, dy) >= 10)
+		g->axis = fabsf(dx) >= fabsf(dy) * 1.15f ? PS_GESTURE_HORIZONTAL : PS_GESTURE_VERTICAL;
+	if (g->axis == PS_GESTURE_HORIZONTAL && dt > 0) {
+		float sample = fmaxf(-8, fminf(8, (g->lastX - x) / g->pitch / dt));
+		g->velocity = dt > .2 ? 0 : g->velocity * .35f + sample * .65f;
+	}
+	g->lastX = x;
+	g->lastY = y;
+	g->lastTime = now;
+	if (g->axis != PS_GESTURE_HORIZONTAL)
+		return false;
+	s->scroll = boundedScroll(g->startScroll - dx / g->pitch, count);
+	s->selected = (size_t) lroundf(s->scroll);
+	return true;
+}
+enum PSGestureResult PSGestureEnd(struct PSState* s, size_t count, float x, float y, double now, bool cancelled) {
+	struct PSGesture* g = &s->gesture;
+	if (!g->active)
+		return PS_GESTURE_IGNORED;
+	if (hypotf(x - g->lastX, y - g->lastY) > .01f)
+		PSGestureMove(s, count, x, y, now);
+	g->active = false;
+	if (g->axis == PS_GESTURE_HORIZONTAL) {
+		float velocity = now - g->lastTime > .08 ? 0 : g->velocity;
+		s->scroll = boundedScroll(g->startScroll - (x - g->x) / g->pitch, count);
+		float target = s->scroll + (!cancelled && !s->reduced ? velocity * .14f : 0);
+		s->selected = (size_t) lroundf(boundedScroll(target, count));
+		return PS_GESTURE_SWIPE;
+	}
+	return !cancelled && g->axis == PS_GESTURE_PENDING ? PS_GESTURE_TAP : PS_GESTURE_IGNORED;
+}
+void PSGestureCancel(struct PSState* s, size_t count, double now) {
+	PSGestureEnd(s, count, s->gesture.lastX, s->gesture.lastY, now, true);
+}
+unsigned PSShelfTapAction(struct PSState* s, size_t count, float x, float y) {
+	if (s->mode != PS_BROWSE || s->gesture.active || !count)
+		return 0;
+	if (y > 620 && x > 500 && x < 790)
+		return PS_ACCEPT;
+	if (y <= 230 || y >= 520 || x < 100 || x >= 690)
+		return 0;
+	/* Native 1280x720 layout: the center slot projects to x=414, pitch=136. */
+	long index = lroundf(s->scroll + (x - 414) / 136);
+	if (index < 0 || (size_t) index >= count)
+		return 0;
+	if ((size_t) index == s->selected)
+		return PS_ACCEPT;
+	s->selected = (size_t) index;
+	return 0;
+}
 void PSStateAction(struct PSState* s, unsigned actions, size_t count, double now) {
+	/* Buttons may take over a gesture; accepting while the finger is down is ignored. */
+	if (s->gesture.active && actions) {
+		PSGestureCancel(s, count, now);
+		actions &= ~PS_ACCEPT;
+	}
 	if (actions & PS_REDUCE)
 		s->reduced = !s->reduced;
 	if (s->mode == PS_BROWSE) {
@@ -274,7 +352,8 @@ void PSStateAction(struct PSState* s, unsigned actions, size_t count, double now
 void PSStateUpdate(struct PSState* s, double now) {
 	float delta = s->lastUpdate ? fminf(.1f, fmaxf(0, (float) (now - s->lastUpdate))) : 0;
 	s->lastUpdate = now;
-	s->scroll += ((float) s->selected - s->scroll) * (1 - expf(-14 * delta));
+	if (!s->gesture.active)
+		s->scroll += ((float) s->selected - s->scroll) * (1 - expf(-14 * delta));
 	float t = fmaxf(0, (float) (now - s->began));
 	if (s->mode == PS_BROWSE) {
 		s->facing += (s->inspectBack - s->facing) * (1 - expf(-10 * delta));

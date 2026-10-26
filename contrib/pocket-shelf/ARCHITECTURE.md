@@ -4,7 +4,7 @@ The browser is the design reference. The shipped Switch frontend is C and OpenGL
 
 ## Shared native layer
 
-- `src/platform/pocket-shelf/pocket-shelf.c`: bounded recursive catalogue, local cover lookup, original filenames, selection and deterministic rear-insertion/cancellation/ejection poses.
+- `src/platform/pocket-shelf/pocket-shelf.c`: bounded recursive catalogue, local cover lookup, original filenames, selection, a shared axis-locked swipe/tap recognizer with bounded inertia, and deterministic rear-insertion/cancellation/ejection poses.
 - `renderer.c`: OpenGL 3.2 / OpenGL ES 3 shaders, indexed model batches, a 1280 × 720 offscreen framebuffer, a bounded five-cover cache and FreeType CJK text atlas. Large user covers are limited before GPU upload.
 - `contrib/pocket-shelf/assets/native`: checked-in geometry baked from our own GLB export, plus our original illustrative labels. The baker merges material batches and deduplicates vertices. It does not run on the Switch.
 
@@ -12,7 +12,7 @@ Regenerate geometry with `tools/bake-model.py` using an export of the browser's 
 
 ## Switch adapter and game lifecycle
 
-`src/platform/switch/pocket-shelf.inc` adapts Joy-Con, stick, touch, application lifetime and docked/handheld output. It returns the exact selected path through an optional `mGUIRunner.selectGame` hook. `mGUIRunloop` then applies the same recent-game/config updates and calls the original `mGUIRun`.
+`src/platform/switch/pocket-shelf.inc` adapts Joy-Con, stick, single-finger shelf swipes/taps, application lifetime and docked/handheld output. It returns the exact selected path through an optional `mGUIRunner.selectGame` hook. `mGUIRunloop` then applies the same recent-game/config updates and calls the original `mGUIRun`.
 
 All shelf GPU resources, font state and catalogue allocations are released **before** starting the game. The emulator retains its own renderer, audio, input, pause, save and autosave code. Exiting the game returns to the picker and reconstructs the shelf, with the last cartridge's ejection animation. A shader/asset initialization failure, or pressing Minus, opens the original file picker.
 

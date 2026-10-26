@@ -13,6 +13,7 @@
 #include <SDL_opengl.h>
 #endif
 #include <errno.h>
+#include <math.h>
 #include <spawn.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -97,6 +98,38 @@ static bool launch(SDL_Window* window, const char* exe, const char* path) {
 	SDL_RaiseWindow(window);
 	return WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
+struct DesktopPointer {
+	bool active;
+	SDL_FingerID id;
+	float x, y, startX, startY;
+};
+static void beginPointer(struct DesktopPointer* p, struct PSState* s, SDL_FingerID id, float x, float y, double now) {
+	if (p->active || s->mode != PS_BROWSE)
+		return;
+	*p = (struct DesktopPointer) { true, id, x, y, x, y };
+	if (x < 690 && y > 230 && y < 520)
+		PSGestureBegin(s, x, y, 136, now);
+}
+static void movePointer(struct DesktopPointer* p, struct PSState* s, size_t count, SDL_FingerID id, float x, float y,
+                        double now) {
+	if (!p->active || p->id != id)
+		return;
+	p->x = x;
+	p->y = y;
+	PSGestureMove(s, count, x, y, now);
+}
+static unsigned endPointer(struct DesktopPointer* p, struct PSState* s, size_t count, SDL_FingerID id, float x, float y,
+                           double now, bool cancel) {
+	if (!p->active || p->id != id)
+		return 0;
+	bool hadGesture = s->gesture.active;
+	enum PSGestureResult result = PSGestureEnd(s, count, x, y, now, cancel);
+	p->active = false;
+	bool tap = hadGesture ? result == PS_GESTURE_TAP : hypotf(x - p->startX, y - p->startY) < 10;
+	if (cancel || !tap || s->mode != PS_BROWSE)
+		return 0;
+	return PSShelfTapAction(s, count, x, y);
+}
 int main(int argc, char** argv) {
 	const char* root = PS_DEFAULT_ROMS;
 	const char* assets = PS_ASSET_DIR;
@@ -163,6 +196,7 @@ int main(int argc, char** argv) {
 			if (pad)
 				break;
 		}
+	struct DesktopPointer pointer = { 0 };
 	bool running = true;
 	int result = 0;
 	unsigned frame = 0;
@@ -174,6 +208,10 @@ int main(int argc, char** argv) {
 	}
 	while (running) {
 		unsigned actions = 0;
+		double inputNow = SDL_GetPerformanceCounter() / (double) SDL_GetPerformanceFrequency() - origin;
+		int windowWidth, windowHeight;
+		SDL_GetWindowSize(window, &windowWidth, &windowHeight);
+		float scaleX = 1280.f / (windowWidth ? windowWidth : 1), scaleY = 720.f / (windowHeight ? windowHeight : 1);
 		SDL_Event e;
 		while (SDL_PollEvent(&e)) {
 			if (e.type == SDL_QUIT)
@@ -207,16 +245,27 @@ int main(int argc, char** argv) {
 					break;
 				}
 			}
-			if (e.type == SDL_MOUSEBUTTONDOWN) {
-				if (e.button.y > 620 && e.button.x > 500 && e.button.x < 780)
-					actions |= PS_ACCEPT;
-				else if (e.button.y > 225 && e.button.y < 515) {
-					if (e.button.x < 280)
-						actions |= PS_LEFT;
-					else if (e.button.x < 650)
-						actions |= PS_RIGHT;
-				}
-			}
+			if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT &&
+			    e.button.which != SDL_TOUCH_MOUSEID)
+				beginPointer(&pointer, &state, INT64_MIN, e.button.x * scaleX, e.button.y * scaleY, inputNow);
+			if (e.type == SDL_MOUSEMOTION && e.motion.which != SDL_TOUCH_MOUSEID)
+				movePointer(&pointer, &state, catalog.count, INT64_MIN, e.motion.x * scaleX, e.motion.y * scaleY,
+				            inputNow);
+			if (e.type == SDL_MOUSEBUTTONUP && e.button.button == SDL_BUTTON_LEFT &&
+			    e.button.which != SDL_TOUCH_MOUSEID)
+				actions |= endPointer(&pointer, &state, catalog.count, INT64_MIN, e.button.x * scaleX,
+				                      e.button.y * scaleY, inputNow, false);
+			if (e.type == SDL_FINGERDOWN)
+				beginPointer(&pointer, &state, e.tfinger.fingerId, e.tfinger.x * 1280, e.tfinger.y * 720, inputNow);
+			if (e.type == SDL_FINGERMOTION)
+				movePointer(&pointer, &state, catalog.count, e.tfinger.fingerId, e.tfinger.x * 1280, e.tfinger.y * 720,
+				            inputNow);
+			if (e.type == SDL_FINGERUP)
+				actions |= endPointer(&pointer, &state, catalog.count, e.tfinger.fingerId, e.tfinger.x * 1280,
+				                      e.tfinger.y * 720, inputNow, false);
+			if (e.type == SDL_WINDOWEVENT &&
+			    (e.window.event == SDL_WINDOWEVENT_FOCUS_LOST || e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED))
+				endPointer(&pointer, &state, catalog.count, pointer.id, pointer.x, pointer.y, inputNow, true);
 		}
 		double now = SDL_GetPerformanceCounter() / (double) SDL_GetPerformanceFrequency() - origin;
 		if (smoke) {
@@ -224,6 +273,8 @@ int main(int argc, char** argv) {
 			if (frame == 15)
 				actions |= PS_ACCEPT;
 		}
+		if (actions && pointer.active)
+			endPointer(&pointer, &state, catalog.count, pointer.id, pointer.x, pointer.y, inputNow, true);
 		if (actions & PS_EXIT)
 			running = false;
 		if ((actions & PS_RESCAN) && state.mode == PS_BROWSE) {

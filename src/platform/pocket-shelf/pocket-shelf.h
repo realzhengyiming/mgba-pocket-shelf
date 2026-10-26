@@ -46,8 +46,17 @@ struct PSPose {
 	struct PSQuat rotation;
 	float scale;
 };
+enum PSGestureAxis { PS_GESTURE_PENDING, PS_GESTURE_HORIZONTAL, PS_GESTURE_VERTICAL };
+enum PSGestureResult { PS_GESTURE_IGNORED, PS_GESTURE_TAP, PS_GESTURE_SWIPE };
+struct PSGesture {
+	bool active;
+	enum PSGestureAxis axis;
+	float x, y, lastX, lastY, startScroll, pitch, velocity;
+	double lastTime;
+};
 struct PSState {
 	enum PSMode mode;
+	struct PSGesture gesture;
 	size_t selected;
 	float scroll;
 	bool reduced, inspectBack;
@@ -65,6 +74,11 @@ void PSStateInit(struct PSState*, size_t selected);
 void PSStateAction(struct PSState*, unsigned actions, size_t count, double now);
 void PSStateUpdate(struct PSState*, double now);
 void PSStateReturn(struct PSState*, double now);
+bool PSGestureBegin(struct PSState*, float x, float y, float pixelsPerCard, double now);
+bool PSGestureMove(struct PSState*, size_t count, float x, float y, double now);
+enum PSGestureResult PSGestureEnd(struct PSState*, size_t count, float x, float y, double now, bool cancelled);
+void PSGestureCancel(struct PSState*, size_t count, double now);
+unsigned PSShelfTapAction(struct PSState*, size_t count, float x, float y);
 struct PSPose PSHandheldPose(float facing);
 struct PSPose PSCardHome(float offset);
 struct PSVec PSVecMix(struct PSVec a, struct PSVec b, float t);

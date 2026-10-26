@@ -597,10 +597,8 @@ void PSRendererDestroy(struct PSRenderer* r) {
 void PSRendererDraw(struct PSRenderer* r, const struct PSCatalog* c, const struct PSState* s, const char* notice) {
 	/* Load at most five nearby covers before drawing. No per-ROM mesh allocations. */
 	GLuint covers[5] = { 0 };
-	size_t first = s->selected > 1 ? s->selected - 2 : 0,
-	       last = s->selected + 2 < c->count ? s->selected + 2 :
-	    c->count                             ? c->count - 1 :
-	                                           0;
+	size_t anchor = s->mode == PS_BROWSE ? (size_t) lroundf(s->scroll) : s->selected;
+	size_t first = anchor > 1 ? anchor - 2 : 0, last = anchor + 2 < c->count ? anchor + 2 : c->count ? c->count - 1 : 0;
 	glBindFramebuffer(GL_FRAMEBUFFER, r->fbo);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -676,7 +674,7 @@ void PSRendererDraw(struct PSRenderer* r, const struct PSCatalog* c, const struc
 	rect(r, 64, 625, 1152, 1, line);
 	rect(r, 507, 645, 265, 54, green);
 	text(r, 542, 681, 23, s->mode == PS_INSERT ? "插卡中…" : "A   插卡，开玩", 235, light);
-	text(r, 64, 679, 18, "← → 选择    X 重新扫描", 400, ink);
+	text(r, 64, 679, 18, "左右滑动选卡 · X 扫描", 400, ink);
 	text(r, 854, 679, 17, "− 文件浏览    + 退出", 350, muted);
 	if (notice && notice[0]) {
 		rect(r, 64, 706, 1152, 13, light);

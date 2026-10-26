@@ -5,12 +5,13 @@ import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { makeCartridge,makeShelf,makeHandheld,updateScreen,SHELLS } from './models.js';
 import { MOTION,insertPose,ejectPose,clamp,smooth } from './motion.js';
 import { REFERENCE,SLOT } from './hardware.js';
+import { beginSwipe,moveSwipe,endSwipe } from './swipe.js';
 
 const el=id=>document.getElementById(id),stage=el('stage');
 const ui={title:el('game-title'),meta:el('game-meta'),index:el('game-index'),status:el('device-status'),hint:el('device-hint'),insert:el('insert'),previous:el('previous'),next:el('next'),back:el('back'),refresh:el('refresh')};
 const state={games:[],selected:0,scroll:0,mode:'browse',started:0,speed:1,reduced:matchMedia('(prefers-reduced-motion: reduce)').matches,sound:false,hover:-1,returnFrom:null,pickFrom:null,frame:0,facing:0,cardSlide:0,inspectBack:false,posePhase:null};
 let renderer,scene,camera,machine,rack,carts=[],artifacts,cancelled=false,mobile=false,lastGamepadPress=0,padWasDown=false,padAxis=0,audio;
-let dragging=null,sceneDisposed=false;
+let dragging=null,shelfPointer=null,sceneDisposed=false;
 const raycaster=new THREE.Raycaster(),pointer=new THREE.Vector2(),clock=new THREE.Clock();
 const aligned=new THREE.Quaternion();
 const pickStart=new THREE.Vector3(),pickRotation=new THREE.Quaternion();
@@ -33,38 +34,38 @@ function captureReturn(cart,seated=false){
 
 function error(message){el('error').hidden=!message;el('error').textContent=message;}
 function describe(){
-  const game=state.games[state.selected],busy=state.mode!=='browse';
+  const game=state.games[state.selected],busy=state.mode!=='browse'||!!shelfPointer;
   if(!game){ui.title.textContent='卡带架还是空的';ui.meta.textContent='把 .gba / .gb / .gbc 放进 /roms，再重新扫描';ui.index.textContent='00 / 00';ui.insert.disabled=true;ui.previous.disabled=true;ui.next.disabled=true;return;}
   ui.title.textContent=game.title;
   ui.meta.textContent=`${game.system==='GBA'?'GAME BOY ADVANCE':game.system==='GBC'?'GAME BOY COLOR':'GAME BOY'}　·　${(game.bytes/1048576).toFixed(1)} MB　·　本地卡带`;
   ui.index.textContent=`${String(state.selected+1).padStart(2,'0')} / ${String(state.games.length).padStart(2,'0')}`;
   el('game-count').textContent=String(state.games.length).padStart(2,'0');
   ui.previous.disabled=busy||state.selected===0;ui.next.disabled=busy||state.selected===state.games.length-1;
-  ui.refresh.disabled=busy;ui.insert.disabled=state.mode==='return';
+  ui.refresh.disabled=busy;ui.insert.disabled=state.mode==='return'||!!shelfPointer;
   el('view-back').disabled=state.mode==='insert'||state.mode==='return';
   el('insert-label').textContent=state.mode==='play'?'拔出卡带':state.mode==='insert'?'正在插卡…':'插卡，开玩';
   el('back-label').textContent=state.mode==='browse'?'放回卡带':'拔出卡带';
   ui.insert.disabled ||= state.mode==='insert';
   el('status-dot').classList.toggle('is-on',state.mode==='play');
   if(state.mode==='browse'){
-    ui.status.textContent='掌机正在等一张卡带';ui.hint.textContent='可以把卡带拖到掌机上，也可以按 A。';
+    ui.status.textContent='掌机正在等一张卡带';ui.hint.textContent='在架子上左右滑动选卡；向上拖卡或按 A 插入。';
   }else if(state.mode==='insert'){
     ui.status.textContent='把好时光，轻轻插回去。';ui.hint.textContent='按 B，可以把卡带放回去。';
   }else if(state.mode==='play'){
-    ui.status.textContent='咔哒。好时光开机了。';ui.hint.textContent='交互预览完成；Switch 版将在这里交给 mGBA。';
+    ui.status.textContent='咔哒。好时光开机了。';ui.hint.textContent='按 B 放回卡带后，可继续左右滑动选卡。';
   }else{ui.status.textContent='把卡带收好，下次继续。';ui.hint.textContent='';}
 }
 function select(index){
-  if(state.mode!=='browse'||dragging)return;
+  if(state.mode!=='browse'||dragging||shelfPointer)return;
   const next=clamp(index,0,state.games.length-1);if(next===state.selected)return;
   state.selected=next;ensureCarts();error('');describe();sound('select');
 }
 function ensureCarts(){
-  // Keep only nearby physical models alive; a large ROM folder is still a small scene.
-  for(let i=Math.max(0,state.selected-2);i<=Math.min(state.games.length-1,state.selected+2);i++){
-    if(!carts[i]){carts[i]=makeCartridge(state.games[i],i);artifacts.add(carts[i]);}
-  }
-  for(let i=0;i<carts.length;i++)if(carts[i]&&Math.abs(i-state.selected)>3){artifacts.remove(carts[i]);disposeTree(carts[i]);carts[i]=undefined;}
+  // Include both the finger position and snap target, even on a long fling.
+  const keep=new Set();
+  for(const center of[state.selected,Math.round(state.scroll)])for(let i=Math.max(0,center-2);i<=Math.min(state.games.length-1,center+2);i++)keep.add(i);
+  for(const i of keep)if(!carts[i]){carts[i]=makeCartridge(state.games[i],i);artifacts.add(carts[i]);}
+  for(let i=0;i<carts.length;i++)if(carts[i]&&!keep.has(i)){artifacts.remove(carts[i]);disposeTree(carts[i]);carts[i]=undefined;}
 }
 function sound(type){
   if(!state.sound)return;
@@ -78,7 +79,7 @@ function sound(type){
   }catch{}
 }
 function insert(){
-  if(!state.games.length||state.mode==='insert'||state.mode==='return')return;
+  if(!state.games.length||state.mode==='insert'||state.mode==='return'||shelfPointer)return;
   if(state.mode==='play'){back();return;}
   const cart=carts[state.selected];if(!cart)return;
   state.mode='insert';state.started=performance.now()/1000;
@@ -100,6 +101,7 @@ function home(index){
 }
 function arrange(){
   if(!camera)return;
+  if(shelfPointer)cancelPointer();
   const width=stage.clientWidth,height=stage.clientHeight;mobile=width<650;
   renderer.setSize(width,height,false);
   const aspect=width/height,worldWidth=mobile?Math.max(6.3,4.1*aspect):Math.max(11.75,3.8*aspect),halfHeight=worldWidth/aspect/2;
@@ -135,31 +137,57 @@ function hit(event){
   raycaster.setFromCamera(pointer,camera);
   return raycaster.intersectObjects(carts.filter(Boolean),true).find(h=>h.object.userData.gameIndex!==undefined&&carts[h.object.userData.gameIndex].visible);
 }
+function cardPitch(){
+  const a=home(state.selected).position.clone(),b=a.clone();b.x+=mobile?1.16:1.62;
+  a.project(camera);b.project(camera);
+  return Math.max(36,Math.abs(b.x-a.x)*renderer.domElement.getBoundingClientRect().width/2);
+}
 function pointerDown(event){
-  if(state.mode!=='browse')return;
-  const h=hit(event);if(!h)return;
-  const index=h.object.userData.gameIndex;
-  if(index!==state.selected){select(index);return;}
-  const cart=carts[index],normal=new THREE.Vector3();camera.getWorldDirection(normal);
-  dragging={id:event.pointerId,x:event.clientX,y:event.clientY,moved:false,cart,plane:new THREE.Plane().setFromNormalAndCoplanarPoint(normal,cart.position),offset:cart.position.clone().sub(h.point)};
-  renderer.domElement.setPointerCapture(event.pointerId);
+  if(state.mode!=='browse'||shelfPointer||!state.games.length||(event.pointerType==='mouse'&&event.button!==0))return;
+  const h=hit(event);if(!h&&!raycaster.intersectObject(rack,true).length)return;
+  const index=h?.object.userData.gameIndex??-1;
+  shelfPointer={id:event.pointerId,index,swipe:beginSwipe(event.clientX,event.clientY,event.timeStamp/1000,state.scroll,cardPitch()),hit:h};
+  renderer.domElement.setPointerCapture(event.pointerId);describe();
+}
+function showSwipe(index){
+  if(index!==state.selected){state.selected=index;error('');describe();sound('select');}
+  ensureCarts();
 }
 function pointerMove(event){
-  if(!dragging){if(state.mode==='browse'){const h=hit(event);state.hover=h?.object.userData.gameIndex??-1;stage.classList.toggle('can-grab',!!h);}return;}
-  if(!dragging.moved&&Math.hypot(event.clientX-dragging.x,event.clientY-dragging.y)<7)return;
-  dragging.moved=true;stage.classList.add('is-dragging');
-  hit(event);const point=raycaster.ray.intersectPlane(dragging.plane,new THREE.Vector3());
-  if(point){dragging.cart.position.copy(point.add(dragging.offset));dragging.cart.rotation.z=clamp((event.clientX-dragging.x)*.0009,-.15,.15);}
-  ui.status.textContent='把卡带移到掌机上方';ui.hint.textContent='松开，听一声咔哒。';
+  const p=shelfPointer;
+  if(!p){if(state.mode==='browse'){const h=hit(event);state.hover=h?.object.userData.gameIndex??-1;stage.classList.toggle('can-grab',!!h);}return;}
+  if(event.pointerId!==p.id)return;
+  const move=moveSwipe(p.swipe,event.clientX,event.clientY,event.timeStamp/1000,state.games.length);
+  if(move.axis==='horizontal'){
+    state.scroll=move.scroll;showSwipe(move.selected);stage.classList.add('is-swiping');
+    ui.status.textContent='左右滑动，挑一盘喜欢的';ui.hint.textContent='松手自动对齐；按 A 或轻点选中的卡带插入。';
+  }else if(move.axis==='vertical'&&p.hit&&p.index===state.selected){
+    if(!dragging){const cart=carts[p.index],normal=new THREE.Vector3();camera.getWorldDirection(normal);dragging={id:p.id,x:p.swipe.x,y:p.swipe.y,moved:true,cart,plane:new THREE.Plane().setFromNormalAndCoplanarPoint(normal,cart.position),offset:cart.position.clone().sub(p.hit.point)};}
+    stage.classList.add('is-dragging');hit(event);const point=raycaster.ray.intersectPlane(dragging.plane,new THREE.Vector3());
+    if(point){dragging.cart.position.copy(point.add(dragging.offset));dragging.cart.rotation.z=clamp((event.clientX-dragging.x)*.0009,-.15,.15);}
+    ui.status.textContent='把卡带移到掌机上方';ui.hint.textContent='松开，听一声咔哒。';
+  }
 }
-function pointerUp(event){
-  if(!dragging)return;
-  const drag=dragging;dragging=null;stage.classList.remove('is-dragging');
-  if(!drag.moved){insert();return;}
-  const target=slotPosition('seated');target.project(camera);
-  const rect=renderer.domElement.getBoundingClientRect();const sx=rect.left+(target.x+1)*rect.width/2,sy=rect.top+(1-target.y)*rect.height/2;
-  if(Math.hypot(event.clientX-sx,event.clientY-sy)<(mobile?110:170)){insert();}
-  else {state.returnFrom=captureReturn(drag.cart);state.mode='return';state.started=performance.now()/1000;describe();}
+function finishPointer(event,cancelled=false){
+  const p=shelfPointer;if(!p||event.pointerId!==p.id)return;
+  const drag=dragging;dragging=null;shelfPointer=null;
+  const result=endSwipe(p.swipe,event.clientX,event.clientY,event.timeStamp/1000,state.games.length,cancelled,state.reduced);
+  stage.classList.remove('is-dragging','is-swiping','can-grab');state.hover=-1;
+  if(renderer.domElement.hasPointerCapture(p.id))renderer.domElement.releasePointerCapture(p.id);
+  if(result.axis==='horizontal'){state.scroll=result.scroll;showSwipe(result.selected);describe();return;}
+  if(drag){
+    const target=slotPosition('seated');target.project(camera);
+    const rect=renderer.domElement.getBoundingClientRect(),sx=rect.left+(target.x+1)*rect.width/2,sy=rect.top+(1-target.y)*rect.height/2;
+    if(!cancelled&&Math.hypot(event.clientX-sx,event.clientY-sy)<(mobile?110:170))insert();
+    else{state.returnFrom=captureReturn(drag.cart);state.mode='return';state.started=performance.now()/1000;describe();}
+  }else if(result.tap&&p.index>=0){if(p.index!==state.selected)select(p.index);else insert();}
+  else describe();
+}
+function pointerUp(event){finishPointer(event);}
+function cancelPointer(event){
+  if(!shelfPointer||(event?.pointerId!==undefined&&event.pointerId!==shelfPointer.id))return;
+  const p=shelfPointer;
+  finishPointer({pointerId:p.id,clientX:p.swipe.lastX,clientY:p.swipe.lastY,timeStamp:performance.now()},true);
 }
 function keyboard(event){
   if(/INPUT|SELECT|TEXTAREA/.test(event.target.tagName))return;
@@ -169,7 +197,7 @@ function keyboard(event){
   if(event.key==='ArrowRight')select(state.selected+1);
   if((event.key==='Enter'||event.key===' ')&&!event.repeat)insert();
   if(event.key==='Escape'&&!event.repeat)back();
-  if(event.key.toLowerCase()==='x'&&!event.repeat&&state.mode==='browse')loadGames();
+  if(event.key.toLowerCase()==='x'&&!event.repeat&&state.mode==='browse'&&!shelfPointer)loadGames();
 }
 function gamepad(now){
   if(!navigator.getGamepads)return;
@@ -178,13 +206,14 @@ function gamepad(now){
   const direction=p.buttons[14]?.pressed||p.axes[0]<-.55?-1:p.buttons[15]?.pressed||p.axes[0]>.55?1:0;
   if(direction&&(direction!==padAxis||now-lastGamepadPress>.25)){select(state.selected+direction);lastGamepadPress=now;}
   padAxis=direction;
-  if(!padWasDown){if(a)insert();else if(b)back();else if(x&&state.mode==='browse')loadGames();}
+  if(!padWasDown){if(a)insert();else if(b)back();else if(x&&state.mode==='browse'&&!shelfPointer)loadGames();}
   padWasDown=!!(a||b||x);
 }
 function animate(){
   if(cancelled)return;
   state.frame=requestAnimationFrame(animate);const dt=Math.min(.05,clock.getDelta()),now=performance.now()/1000;
-  state.scroll+=(state.selected-state.scroll)*(1-Math.exp(-dt*11));
+  if(!shelfPointer)state.scroll+=(state.selected-state.scroll)*(1-Math.exp(-dt*11));
+  if(state.mode==='browse')ensureCarts();
   gamepad(now);
   for(let i=0;i<carts.length;i++){
     const cart=carts[i];if(!cart)continue;
@@ -295,8 +324,9 @@ async function setup(){
   artifacts=new THREE.Group();artifacts.name='PocketShelfAssets';scene.add(artifacts);
   rack=makeShelf();machine=makeHandheld();artifacts.add(rack,machine);arrange();
   await loadGames();
-  ui.previous.addEventListener('click',()=>select(state.selected-1));ui.next.addEventListener('click',()=>select(state.selected+1));ui.insert.addEventListener('click',insert);ui.back.addEventListener('click',back);ui.refresh.addEventListener('click',()=>{if(state.mode==='browse')loadGames();});
-  document.addEventListener('keydown',keyboard);renderer.domElement.addEventListener('pointerdown',pointerDown);renderer.domElement.addEventListener('pointermove',pointerMove);renderer.domElement.addEventListener('pointerup',pointerUp);renderer.domElement.addEventListener('pointercancel',()=>{if(dragging){const cart=dragging.cart;dragging=null;stage.classList.remove('is-dragging');state.returnFrom=captureReturn(cart);state.mode='return';state.started=performance.now()/1000;describe();}});
+  ui.previous.addEventListener('click',()=>select(state.selected-1));ui.next.addEventListener('click',()=>select(state.selected+1));ui.insert.addEventListener('click',insert);ui.back.addEventListener('click',back);ui.refresh.addEventListener('click',()=>{if(state.mode==='browse'&&!shelfPointer)loadGames();});
+  window.addEventListener('blur',()=>cancelPointer());document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelPointer();});
+  document.addEventListener('keydown',keyboard);renderer.domElement.addEventListener('pointerdown',pointerDown);renderer.domElement.addEventListener('pointermove',pointerMove);renderer.domElement.addEventListener('pointerup',pointerUp);renderer.domElement.addEventListener('pointercancel',cancelPointer);renderer.domElement.addEventListener('lostpointercapture',cancelPointer);
   el('sound').addEventListener('click',()=>{state.sound=!state.sound;el('sound').setAttribute('aria-pressed',String(state.sound));el('sound').setAttribute('aria-label',state.sound?'关闭音效':'开启音效');el('sound').textContent=state.sound?'声音开':'声音关';if(state.sound)sound('select');});
   el('shell').addEventListener('change',e=>{machine.userData.shell.color.set(SHELLS[e.target.value]);machine.userData.back.color.set(SHELLS[e.target.value]).multiplyScalar(.81);});
   el('view-back').addEventListener('click',()=>{if(state.mode!=='browse'&&state.mode!=='play')return;state.inspectBack=!state.inspectBack;el('view-back').setAttribute('aria-pressed',String(state.inspectBack));el('view-back').textContent=state.inspectBack?'查看正面':'查看背面';});

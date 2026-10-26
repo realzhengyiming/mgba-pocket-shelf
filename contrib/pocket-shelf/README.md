@@ -9,6 +9,7 @@ A cartridge-style frontend for this mGBA fork: browse your ROM folder, choose a 
 **The C/OpenGL ES frontend is integrated into the Switch version and cross-compiles to an NRO. Switch hardware testing is still pending.**
 
 - The shared native C layer scans ROM folders recursively, preserves actual filenames and reads same-name PNG covers. Missing covers get an original generated label.
+- Horizontal touch/mouse swipes track the finger, snap with a short fling, and stay bounded at the ends. Taps and vertical/cancelled gestures are kept separate from game launch.
 - Native models reuse the [AGB-001 / short GBA cartridge design](HARDWARE_REFERENCES.md), with rear insertion, front boot, cancellation, ejection and reduced motion.
 - Switch reuses the original mGBA game loader, controls, audio, saves and pause menu. Exiting a game returns to the shelf. Minus opens the original file picker.
 - CJK font rendering, nearby-cover caching and GPU teardown before emulation are implemented.
@@ -30,7 +31,7 @@ cmake --build --preset pocket-macos-debug --parallel 4
 ./build-pocket-macos/pocket-shelf/mgba-pocket-shelf --roms /absolute/path/to/roms
 ```
 
-Run from the repository root. Left/right selects, Enter/A inserts, Esc/B cancels, Y inspects the rear, X rescans, R toggles reduced motion and Q exits. The Mac adapter launches the existing SDL executable via `posix_spawn`; Switch uses the in-process `mGUIRunner` hook. This debug `.app` is tied to the build directory and dependencies; it is not a portable Mac release.
+Run from the repository root. Swipe the shelf or use left/right to select; release to snap. Enter/A inserts, Esc/B cancels, Y inspects the rear, X rescans, R toggles reduced motion and Q exits. The Mac adapter launches the existing SDL executable via `posix_spawn`; Switch uses the in-process `mGUIRunner` hook. This debug `.app` is tied to the build directory and dependencies; it is not a portable Mac release.
 
 ```sh
 ./build-pocket-macos/pocket-shelf/pocket-shelf-tests
@@ -59,7 +60,7 @@ npm ci
 npm run dev
 ```
 
-Open <http://127.0.0.1:3764>. The web prototype supports mouse dragging, optional sound, shell colors, rear inspection, and GLB/motion export. It **does not launch games**; the native program above does.
+Open <http://127.0.0.1:3764>. The web prototype supports horizontal shelf swipes, upward cartridge pickup/dragging, optional sound, shell colors, rear inspection, and GLB/motion export. It **does not launch games**; the native program above does.
 
 Default ROM folder: `contrib/pocket-shelf/roms`. Override with `POCKET_ROMS=/absolute/path/to/roms npm run dev`. Without game files, the web preview displays clearly marked design-only sample cards. Use `POCKET_DEMO=0` for an empty shelf. Same-name web covers may be PNG/JPEG; native covers are PNG.
 

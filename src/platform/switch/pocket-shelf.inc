@@ -32,6 +32,9 @@ static int _selectPocketGame(struct mGUIRunner* runner, char* path, size_t capac
 	u64 previousDirections = 0;
 	double nextRepeat = 0;
 	bool wasTouch = false;
+	float touchX = 0, touchY = 0, touchStartX = 0, touchStartY = 0;
+	bool touchAllowed = false;
+	double lastTouchPoll = 0;
 	eglSwapInterval(s_display, 1);
 	while (_running(runner)) {
 		double now = armGetSystemTick() / 19200000. - origin;
@@ -70,20 +73,35 @@ static int _selectPocketGame(struct mGUIRunner* runner, char* path, size_t capac
 			result = -1;
 			break;
 		}
+		if (actions || (lastTouchPoll && now - lastTouchPoll > .25)) {
+			PSGestureCancel(&state, catalog.count, now);
+			touchAllowed = false;
+		}
+		lastTouchPoll = now;
 		HidTouchScreenState touch = { 0 };
 		hidGetTouchScreenStates(&touch, 1);
-		if (touch.count && !wasTouch && state.mode == PS_BROWSE) {
-			unsigned x = touch.touches[0].x, y = touch.touches[0].y;
-			if (y > 620 && x > 500 && x < 790)
-				actions |= PS_ACCEPT;
-			else if (y > 230 && y < 500 && x < 650) {
-				if (x < 270)
-					actions |= PS_LEFT;
-				else if (x > 450)
-					actions |= PS_RIGHT;
-				else
-					actions |= PS_ACCEPT;
+		if (touch.count > 1) {
+			PSGestureCancel(&state, catalog.count, now);
+			touchAllowed = false;
+		} else if (touch.count == 1) {
+			touchX = touch.touches[0].x;
+			touchY = touch.touches[0].y;
+			if (!wasTouch) {
+				touchStartX = touchX;
+				touchStartY = touchY;
+				touchAllowed = state.mode == PS_BROWSE && !actions;
+				if (touchAllowed && touchX < 690 && touchY > 230 && touchY < 520)
+					PSGestureBegin(&state, touchX, touchY, 136, now);
+			} else if (touchAllowed) {
+				PSGestureMove(&state, catalog.count, touchX, touchY, now);
 			}
+		} else if (wasTouch && touchAllowed) {
+			bool hadGesture = state.gesture.active;
+			enum PSGestureResult gesture = PSGestureEnd(&state, catalog.count, touchX, touchY, now, false);
+			bool tap = hadGesture ? gesture == PS_GESTURE_TAP : hypotf(touchX - touchStartX, touchY - touchStartY) < 10;
+			if (tap)
+				actions |= PSShelfTapAction(&state, catalog.count, touchX, touchY);
+			touchAllowed = false;
 		}
 		wasTouch = touch.count > 0;
 		if ((actions & PS_RESCAN) && state.mode == PS_BROWSE) {
