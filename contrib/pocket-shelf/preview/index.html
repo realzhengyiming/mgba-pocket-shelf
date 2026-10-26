@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f3f0e7">
+  <title>Pocket Shelf · 口袋卡带架</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/style.css">
+  <script type="importmap">{"imports":{"three":"/vendor/three/build/three.module.js","three/addons/":"/vendor/three/examples/jsm/"}}</script>
+</head>
+<body>
+  <main class="shelf-app" aria-label="口袋卡带架交互预览">
+    <header class="masthead">
+      <a class="brand" href="/" aria-label="Pocket Shelf 首页"><span class="brand-mark"><span></span></span><span>pocket shelf<span class="brand-sub">口袋卡带架</span></span></a>
+      <span class="edition">A LITTLE SHELF, A LOT OF ADVENTURES.</span>
+      <div class="head-actions"><span class="preview-badge">交互预览</span><button class="sound-toggle" id="sound" type="button" aria-pressed="false" aria-label="开启音效">声音关</button></div>
+    </header>
+    <section class="collection" aria-labelledby="page-title">
+      <div class="intro"><div class="eyebrow"><span></span> YOUR LITTLE GAME COLLECTION</div><h1 id="page-title">今天，插哪一盘？</h1><p>挑一张卡带，把好时光重新开机。</p></div>
+      <div class="collection-count"><span id="game-count">—</span><span>CARTRIDGES<br>本地卡带收藏</span></div>
+      <div id="stage" class="stage" role="img" aria-label="三维卡带架与复古掌机，使用下方按钮选择并插入卡带"><div class="loading" id="loading"><span class="loading-cart"></span>正在摆好你的卡带…</div></div>
+      <div class="shelf-caption" aria-hidden="true"><span>THE CARTRIDGE SHELF</span><span class="desk-label">PICK. INSERT. PLAY.</span></div>
+      <div class="game-info"><div class="game-index" id="game-index">01 / 03</div><h2 id="game-title">读取卡带收藏…</h2><div class="game-meta" id="game-meta">GAME BOY ADVANCE</div></div>
+      <div class="device-info"><span class="status-dot" id="status-dot"></span><span id="device-status" aria-live="polite">掌机正在等一张卡带</span><span class="device-hint" id="device-hint">可以把卡带拖到掌机上，也可以按 A。</span></div>
+    </section>
+    <footer class="controls">
+      <div class="browse-controls"><button type="button" id="previous" class="arrow-button" aria-label="上一张卡带">←</button><span>左右挑一挑</span><button type="button" id="next" class="arrow-button" aria-label="下一张卡带">→</button></div>
+      <button type="button" id="insert" class="insert-button"><span class="keycap">A</span><span id="insert-label">插卡，开玩</span><span class="insert-arrow">↗</span></button>
+      <div class="secondary-controls"><button type="button" id="back"><span class="small-key">B</span><span id="back-label">放回卡带</span></button><button type="button" id="refresh"><span class="small-key">X</span>重新扫描</button></div>
+    </footer>
+    <div class="preview-note"><span id="preview-note">交互预览，暂不启动模拟器</span><span>键盘 ← → 选择 · Enter 插卡 · Esc 放回</span></div>
+    <div class="error-panel" id="error" role="alert" hidden></div>
+  </main>
+  <details class="workbench"><summary>预览调试台</summary><div class="workbench-controls"><label>掌机外壳<select id="shell"><option value="sage">鼠尾草</option><option value="cream">奶油白</option><option value="indigo">复古靛蓝</option></select></label><label>插卡节奏<input id="speed" type="range" min="0.65" max="1.6" step="0.05" value="1"><output id="speed-value">1×</output></label><label class="check-label"><input id="reduce-motion" type="checkbox">减少动画</label><button type="button" id="export-model">导出模型 GLB</button><button type="button" id="export-motion">导出动画参数</button></div></details>
+  <script type="module" src="/source/app.js"></script>
+</body>
+</html>

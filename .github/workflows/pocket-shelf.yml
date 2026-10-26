@@ -1,0 +1,36 @@
+name: Pocket Shelf checks
+
+on:
+  push:
+    branches: [codex/pocket-shelf]
+  pull_request:
+    paths:
+      - contrib/pocket-shelf/**
+      - CMakePresets.json
+      - .github/workflows/pocket-shelf.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: contrib/pocket-shelf/preview/package-lock.json
+      - run: npm ci
+        working-directory: contrib/pocket-shelf/preview
+      - run: npm test
+        working-directory: contrib/pocket-shelf/preview
+  native-baseline:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y cmake libsdl2-dev libgl1-mesa-dev pkg-config
+      - run: cmake --preset pocket-linux-debug
+      - run: cmake --build --preset pocket-linux-debug --parallel 2

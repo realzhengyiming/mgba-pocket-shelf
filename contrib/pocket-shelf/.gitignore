@@ -1,0 +1,10 @@
+preview/node_modules/
+preview/.cover-cache/
+roms/
+exports/
+*.gba
+*.gb
+*.gbc
+*.sav
+*.ss[0-9]
+.DS_Store

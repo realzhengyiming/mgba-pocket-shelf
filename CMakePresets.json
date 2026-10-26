@@ -16,6 +16,84 @@
                 "CMAKE_BUILD_TYPE": "Debug",
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
             }
+        },
+        {
+            "name": "pocket-base",
+            "hidden": true,
+            "generator": "Unix Makefiles",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "BUILD_QT": "OFF",
+                "BUILD_SDL": "ON",
+                "SDL_VERSION": "2",
+                "BUILD_PERF": "ON",
+                "BUILD_LTO": "OFF",
+                "USE_FFMPEG": "OFF",
+                "USE_LUA": "OFF",
+                "USE_JSON_C": "OFF",
+                "USE_FREETYPE": "OFF",
+                "USE_LIBZIP": "OFF",
+                "USE_MINIZIP": "OFF",
+                "USE_SQLITE3": "OFF",
+                "USE_EPOXY": "OFF",
+                "USE_DISCORD_RPC": "OFF",
+                "USE_ELF": "OFF"
+            }
+        },
+        {
+            "name": "pocket-macos-debug",
+            "displayName": "Pocket Shelf: macOS native baseline",
+            "inherits": "pocket-base",
+            "binaryDir": "${sourceDir}/build-pocket-macos",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Darwin"
+            },
+            "cacheVariables": {
+                "CMAKE_PREFIX_PATH": "/opt/homebrew;/usr/local"
+            }
+        },
+        {
+            "name": "pocket-linux-debug",
+            "displayName": "Pocket Shelf: Linux native baseline",
+            "inherits": "pocket-base",
+            "binaryDir": "${sourceDir}/build-pocket-linux",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            }
+        },
+        {
+            "name": "pocket-switch",
+            "displayName": "Pocket Shelf: Switch cross-build baseline",
+            "generator": "Unix Makefiles",
+            "binaryDir": "${sourceDir}/build-pocket-switch",
+            "toolchainFile": "${sourceDir}/src/platform/switch/CMakeToolchain.txt",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "BUILD_QT": "OFF",
+                "BUILD_SDL": "OFF",
+                "BUILD_PERF": "OFF",
+                "USE_DISCORD_RPC": "OFF",
+                "USE_FFMPEG": "OFF"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "pocket-macos-debug",
+            "configurePreset": "pocket-macos-debug"
+        },
+        {
+            "name": "pocket-linux-debug",
+            "configurePreset": "pocket-linux-debug"
+        },
+        {
+            "name": "pocket-switch",
+            "configurePreset": "pocket-switch"
         }
     ]
 }
