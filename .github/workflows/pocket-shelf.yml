@@ -44,6 +44,8 @@ jobs:
     container: devkitpro/devkita64:20260219@sha256:1fc388c3a0d34bd2045a6dadcb1020e069d5f876a187fd705de14b4440c00282
     steps:
       - uses: actions/checkout@v4
+      - name: Trust this checkout for source revision metadata
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - run: cmake --preset pocket-switch
       - run: cmake --build --preset pocket-switch --parallel 2
       - run: python3 contrib/pocket-shelf/tools/package-switch.py build-pocket-switch/switch/mgba.nro dist/pocket-shelf
