@@ -5,7 +5,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {scanLibrary} from '../source/library.mjs';
-import {insertPose,MOTION} from '../source/motion.js';
+import {insertPose,ejectPose,MOTION} from '../source/motion.js';
 
 test('scan recursive libraries, preserve Chinese filenames, find covers, skip saves and symlinks',async t=>{
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'pocket-shelf-test-'));
@@ -34,8 +34,21 @@ test('missing and empty libraries stay empty',async()=>{assert.deepEqual(await s
 test('insertion reaches the seated position before booting, with repeatable timing',()=>{
   const insertion=MOTION.pick+MOTION.align+MOTION.insert;
   assert.equal(insertPose(0).phase,'pick');assert.equal(insertPose(MOTION.pick+.02).phase,'align');
-  assert.equal(insertPose(insertion+.01).phase,'boot');assert.equal(insertPose(insertion+.01).slide,1);
-  assert.equal(insertPose(insertion+MOTION.boot+.01).phase,'ready');
+  assert.equal(insertPose(insertion+.01).phase,'turn');assert.equal(insertPose(insertion+.01).slide,1);
+  const boot=insertPose(insertion+MOTION.turn+.01);assert.equal(boot.phase,'boot');assert.equal(boot.facing,0);
+  assert.equal(insertPose(insertion+MOTION.turn+MOTION.boot+.01).phase,'ready');
   assert.deepEqual(insertPose(1.1,1),insertPose(2.2,2));
 });
 test('reduced motion skips the flight and finishes without flicker',()=>{assert.equal(insertPose(0,1,true).travel,1);assert.equal(insertPose(.21,1,true).phase,'ready');});
+test('the handheld faces backward while the pak enters, and forward only after it is seated',()=>{
+  const begin=MOTION.pick+MOTION.align,end=begin+MOTION.insert;
+  for(let t=begin;t<end;t+=.03){const p=insertPose(t);assert.equal(p.facing,1);assert.ok(p.slide>=0&&p.slide<=1);}
+  const before=insertPose(end-.0001),after=insertPose(end+.0001);
+  assert.ok(Math.abs(before.facing-after.facing)<.0001);assert.ok(Math.abs(before.slide-after.slide)<.0001);
+});
+test('a seated cartridge is exposed and lifted out before it returns to the shelf',()=>{
+  assert.equal(ejectPose(.1).phase,'turn');assert.equal(ejectPose(.1).travel,0);
+  assert.equal(ejectPose(MOTION.ejectTurn+.1).phase,'lift');assert.equal(ejectPose(MOTION.ejectTurn+.1).travel,0);
+  assert.equal(ejectPose(MOTION.ejectTurn+MOTION.ejectLift+.1).phase,'return');
+  assert.equal(ejectPose(2).phase,'ready');assert.equal(ejectPose(.1,1,false).phase,'return');
+});

@@ -3,16 +3,33 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { makeCartridge,makeShelf,makeHandheld,updateScreen,SHELLS } from './models.js';
-import { MOTION,insertPose,clamp,smooth,easeOut } from './motion.js';
+import { MOTION,insertPose,ejectPose,clamp,smooth } from './motion.js';
+import { REFERENCE,SLOT } from './hardware.js';
 
 const el=id=>document.getElementById(id),stage=el('stage');
 const ui={title:el('game-title'),meta:el('game-meta'),index:el('game-index'),status:el('device-status'),hint:el('device-hint'),insert:el('insert'),previous:el('previous'),next:el('next'),back:el('back'),refresh:el('refresh')};
-const state={games:[],selected:0,scroll:0,mode:'browse',started:0,speed:1,reduced:matchMedia('(prefers-reduced-motion: reduce)').matches,sound:false,hover:-1,returnFrom:null,pickFrom:null,frame:0};
+const state={games:[],selected:0,scroll:0,mode:'browse',started:0,speed:1,reduced:matchMedia('(prefers-reduced-motion: reduce)').matches,sound:false,hover:-1,returnFrom:null,pickFrom:null,frame:0,facing:0,cardSlide:0,inspectBack:false,posePhase:null};
 let renderer,scene,camera,machine,rack,carts=[],artifacts,cancelled=false,mobile=false,lastGamepadPress=0,padWasDown=false,padAxis=0,audio;
 let dragging=null,sceneDisposed=false;
 const raycaster=new THREE.Raycaster(),pointer=new THREE.Vector2(),clock=new THREE.Clock();
 const aligned=new THREE.Quaternion();
 const pickStart=new THREE.Vector3(),pickRotation=new THREE.Quaternion();
+const turnY=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),Math.PI);
+function faceMachine(facing){
+  state.facing=facing;
+  machine.quaternion.copy(machine.userData.restQuaternion).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),Math.PI*facing));
+  scene.updateMatrixWorld(true);
+}
+function slotPosition(which){return machine.localToWorld(new THREE.Vector3(...SLOT[which]));}
+function rearAbove(){
+  const rotation=machine.userData.restQuaternion.clone().multiply(turnY);
+  return new THREE.Vector3(...SLOT.above).multiply(machine.scale).applyQuaternion(rotation).add(machine.position);
+}
+function captureReturn(cart,seated=false){
+  scene.updateMatrixWorld(true);
+  const rotation=machine.getWorldQuaternion(new THREE.Quaternion());
+  return {position:cart.position.clone(),quaternion:cart.quaternion.clone(),scale:cart.scale.x,facing:state.facing,seated,localPosition:machine.worldToLocal(cart.position.clone()),localQuaternion:rotation.invert().multiply(cart.quaternion)};
+}
 
 function error(message){el('error').hidden=!message;el('error').textContent=message;}
 function describe(){
@@ -24,6 +41,7 @@ function describe(){
   el('game-count').textContent=String(state.games.length).padStart(2,'0');
   ui.previous.disabled=busy||state.selected===0;ui.next.disabled=busy||state.selected===state.games.length-1;
   ui.refresh.disabled=busy;ui.insert.disabled=state.mode==='return';
+  el('view-back').disabled=state.mode==='insert'||state.mode==='return';
   el('insert-label').textContent=state.mode==='play'?'拔出卡带':state.mode==='insert'?'正在插卡…':'插卡，开玩';
   el('back-label').textContent=state.mode==='browse'?'放回卡带':'拔出卡带';
   ui.insert.disabled ||= state.mode==='insert';
@@ -66,19 +84,19 @@ function insert(){
   state.mode='insert';state.started=performance.now()/1000;
   cart.getWorldPosition(pickStart);cart.getWorldQuaternion(pickRotation);
   state.pickFrom={position:pickStart.clone(),quaternion:pickRotation.clone(),scale:cart.scale.x};
-  state.bootSound=false;state.clickSound=false;dragging=null;stage.classList.remove('is-dragging');describe();
+  state.bootSound=false;state.clickSound=false;state.posePhase=null;state.cardSlide=0;state.inspectBack=false;el('view-back').textContent='查看背面';el('view-back').setAttribute('aria-pressed','false');dragging=null;stage.classList.remove('is-dragging');describe();
 }
 function back(){
   if(state.mode==='browse')return;
   if(state.mode==='return')return;
   const cart=carts[state.selected];if(!cart)return;
-  state.returnFrom={position:cart.position.clone(),quaternion:cart.quaternion.clone(),scale:cart.scale.x};
+  state.returnFrom=captureReturn(cart,state.mode==='play'||state.cardSlide>.02);
   state.mode='return';state.started=performance.now()/1000;updateScreen(machine,'off');describe();
 }
 function home(index){
   const d=index-state.scroll,focus=Math.max(0,1-Math.abs(d));
-  if(mobile)return {position:new THREE.Vector3(d*1.16,.27+focus*.09,1.22+focus*.17),rotation:new THREE.Euler(-.13,-d*.09,-d*.035),scale:.73+focus*.08,visible:Math.abs(d)<1.85};
-  return {position:new THREE.Vector3(-2.62+d*1.62,.43+focus*.1,.48+focus*.23),rotation:new THREE.Euler(-.09,-d*.13,-d*.035),scale:.93+focus*.16,visible:Math.abs(d)<1.82};
+  if(mobile)return {position:new THREE.Vector3(d*1.16,.13+focus*.03,1.22+focus*.17),rotation:new THREE.Euler(-.13,-d*.09,-d*.035),scale:.70+focus*.04,visible:Math.abs(d)<1.85};
+  return {position:new THREE.Vector3(-2.62+d*1.62,.25+focus*.045,.48+focus*.23),rotation:new THREE.Euler(-.09,-d*.13,-d*.035),scale:.94+focus*.06,visible:Math.abs(d)<1.82};
 }
 function arrange(){
   if(!camera)return;
@@ -88,6 +106,7 @@ function arrange(){
   camera.left=-worldWidth/2;camera.right=worldWidth/2;camera.top=halfHeight;camera.bottom=-halfHeight;
   if(mobile){camera.position.set(2,6.8,12);camera.lookAt(0,.25,-.4);machine.position.set(.08,.45,-2);machine.rotation.set(-.14,-.03,-.03);machine.scale.setScalar(.74);rack.position.set(0,-.035,1.05);rack.scale.setScalar(.69);}
   else {camera.position.set(3.2,5.2,12);camera.lookAt(-.13,.58,0);machine.position.set(2.43,.68,-.17);machine.rotation.set(-.13,-.14,-.055);machine.scale.setScalar(1);rack.position.set(-2.62,0,.15);rack.scale.setScalar(1);}
+  machine.userData.restQuaternion=machine.quaternion.clone();faceMachine(state.facing);
   camera.updateProjectionMatrix();scene.updateMatrixWorld(true);
 }
 function disposeTree(group){
@@ -137,10 +156,10 @@ function pointerUp(event){
   if(!dragging)return;
   const drag=dragging;dragging=null;stage.classList.remove('is-dragging');
   if(!drag.moved){insert();return;}
-  const target=machine.localToWorld(new THREE.Vector3(0,1.1,-.05));target.project(camera);
+  const target=slotPosition('seated');target.project(camera);
   const rect=renderer.domElement.getBoundingClientRect();const sx=rect.left+(target.x+1)*rect.width/2,sy=rect.top+(1-target.y)*rect.height/2;
   if(Math.hypot(event.clientX-sx,event.clientY-sy)<(mobile?110:170)){insert();}
-  else {state.returnFrom={position:drag.cart.position.clone(),quaternion:drag.cart.quaternion.clone(),scale:drag.cart.scale.x};state.mode='return';state.started=performance.now()/1000;describe();}
+  else {state.returnFrom=captureReturn(drag.cart);state.mode='return';state.started=performance.now()/1000;describe();}
 }
 function keyboard(event){
   if(/INPUT|SELECT|TEXTAREA/.test(event.target.tagName))return;
@@ -177,14 +196,19 @@ function animate(){
   const cart=carts[state.selected];
   if(cart&&state.mode==='insert'){
     const pose=insertPose(now-state.started,state.speed,state.reduced),start=state.pickFrom;
-    scene.updateMatrixWorld(true);
-    const above=machine.localToWorld(new THREE.Vector3(0,1.88,-.055));
-    const inside=machine.localToWorld(new THREE.Vector3(0,.94,-.055));
-    machine.getWorldQuaternion(aligned);
+    faceMachine(pose.facing);state.cardSlide=pose.slide;
+    const above=slotPosition('above'),inside=slotPosition('seated');
+    machine.getWorldQuaternion(aligned);aligned.multiply(turnY);
     if(pose.phase==='pick'){
       const t=pose.travel;cart.position.lerpVectors(start.position,above,t);cart.position.y+=Math.sin(t*Math.PI)*.48;
-      cart.quaternion.copy(start.quaternion).slerp(aligned,t);cart.scale.setScalar(start.scale+(machine.scale.x*.89-start.scale)*t);
-    }else {cart.position.lerpVectors(above,inside,pose.slide);cart.quaternion.copy(aligned);cart.scale.setScalar(machine.scale.x*.89);}
+      cart.quaternion.copy(start.quaternion).slerp(aligned,t);cart.scale.setScalar(start.scale+(machine.scale.x-start.scale)*t);
+    }else {cart.position.lerpVectors(above,inside,pose.slide);cart.quaternion.copy(aligned);cart.scale.setScalar(machine.scale.x);}
+    if(state.posePhase!==pose.phase){
+      state.posePhase=pose.phase;
+      if(pose.phase==='pick')ui.status.textContent='翻到背面，找到 GBA 卡槽。';
+      if(pose.phase==='insert')ui.status.textContent='沿着背面的导轨，轻轻推到底。';
+      if(pose.phase==='turn')ui.status.textContent='短卡带已插好，转回正面。';
+    }
     if(pose.phase==='insert'&&pose.slide>.87&&!state.clickSound){sound('insert');state.clickSound=true;ui.status.textContent='咔哒。卡带就位。';}
     if(pose.phase==='boot'){
       if(!state.bootSound){sound('boot');state.bootSound=true;ui.status.textContent='掌机亮起来了。';}
@@ -193,15 +217,24 @@ function animate(){
     if(pose.phase==='ready'){state.mode='play';updateScreen(machine,'play',state.games[state.selected].title);describe();}
   }else if(cart&&state.mode==='play'){
     // Keep the inserted card attached to the slot when the preview is resized.
-    scene.updateMatrixWorld(true);
-    cart.position.copy(machine.localToWorld(new THREE.Vector3(0,.94,-.055)));
-    machine.getWorldQuaternion(cart.quaternion);cart.scale.setScalar(machine.scale.x*.89);
+    faceMachine(state.facing+((state.inspectBack?1:0)-state.facing)*(1-Math.exp(-dt*7)));
+    cart.position.copy(slotPosition('seated'));
+    machine.getWorldQuaternion(cart.quaternion);cart.quaternion.multiply(turnY);cart.scale.setScalar(machine.scale.x);
   }else if(cart&&state.mode==='return'){
-    const duration=state.reduced ? .15 : MOTION.eject*state.speed,t=easeOut((now-state.started)/duration),homePose=home(state.selected),start=state.returnFrom;
-    cart.position.lerpVectors(start.position,homePose.position,t);cart.position.y+=Math.sin(t*Math.PI)*.7;
-    cart.quaternion.copy(start.quaternion).slerp(new THREE.Quaternion().setFromEuler(homePose.rotation),t);cart.scale.setScalar(start.scale+(homePose.scale-start.scale)*t);
-    if(t>=1){state.mode='browse';state.returnFrom=null;describe();}
-  }
+    const homePose=home(state.selected),start=state.returnFrom,pose=ejectPose(now-state.started,state.speed,start.seated,state.reduced),t=pose.travel,targetFacing=state.inspectBack?1:0;
+    if(start.seated&&(pose.phase==='turn'||pose.phase==='lift')){
+      faceMachine(start.facing+(1-start.facing)*pose.turn);
+      cart.position.copy(machine.localToWorld(start.localPosition.clone().lerp(new THREE.Vector3(...SLOT.above),pose.lift)));
+      machine.getWorldQuaternion(cart.quaternion);cart.quaternion.multiply(start.localQuaternion);cart.scale.setScalar(machine.scale.x);
+    }else{
+      faceMachine(start.seated?1+(targetFacing-1)*smooth(t):start.facing+(targetFacing-start.facing)*smooth(t));
+      const from=start.seated?rearAbove():start.position;
+      const rotation=start.seated?machine.userData.restQuaternion.clone().multiply(turnY).multiply(turnY):start.quaternion;
+      cart.position.lerpVectors(from,homePose.position,t);cart.position.y+=Math.sin(t*Math.PI)*.7;
+      cart.quaternion.copy(rotation).slerp(new THREE.Quaternion().setFromEuler(homePose.rotation),t);cart.scale.setScalar(start.scale+(homePose.scale-start.scale)*t);
+    }
+    if(pose.phase==='ready'){state.mode='browse';state.returnFrom=null;state.cardSlide=0;describe();}
+  }else {faceMachine(state.facing+((state.inspectBack?1:0)-state.facing)*(1-Math.exp(-dt*7)));}
   const zoomTarget=state.mode==='insert'?(mobile ? .93 : .88):1;
   camera.zoom+=(zoomTarget-camera.zoom)*(1-Math.exp(-dt*5));camera.updateProjectionMatrix();
   renderer.render(scene,camera);
@@ -209,15 +242,16 @@ function animate(){
 function download(blob,name){const a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);}
 function exportMotion(){
   scene.updateMatrixWorld(true);
+  const restMatrix=new THREE.Matrix4().compose(machine.position,machine.userData.restQuaternion,machine.scale);
   const data={
-    version:1,units:'meters',coordinateSystem:'right-handed Y-up',layout:mobile?'mobile':'desktop',
+    version:2,units:'scene units',millimetersPerSceneUnit:144.5/3.78,reference:REFERENCE,coordinateSystem:'right-handed Y-up',layout:mobile?'mobile':'desktop',
     timing:MOTION,durationMultiplier:state.speed,
     easing:{pick:'cubic ease-out',insert:'smoothstep',return:'cubic ease-out'},
     flightLift:.48,returnLift:.7,
     camera:{position:camera.position.toArray(),quaternion:camera.quaternion.toArray(),orthographic:{left:camera.left,right:camera.right,top:camera.top,bottom:camera.bottom}},
-    handheld:{node:machine.name,position:machine.position.toArray(),quaternion:machine.quaternion.toArray(),scale:machine.scale.x},
-    slotAbove:machine.localToWorld(new THREE.Vector3(0,1.88,-.055)).toArray(),
-    slotSeated:machine.localToWorld(new THREE.Vector3(0,.94,-.055)).toArray(),
+    handheld:{node:machine.name,position:machine.position.toArray(),quaternion:machine.userData.restQuaternion.toArray(),scale:machine.scale.x},
+    slotAbove:new THREE.Vector3(...SLOT.above).applyMatrix4(restMatrix).toArray(),
+    slotSeated:new THREE.Vector3(...SLOT.seated).applyMatrix4(restMatrix).toArray(),labelRotationY:SLOT.labelRotationY,
     cartridges:carts.flatMap((cart,i)=>{if(!cart)return [];const h=home(i);return [{node:cart.name,position:h.position.toArray(),rotation:h.rotation.toArray().slice(0,3),scale:h.scale,visible:h.visible}];}),
     states:['browse','insert','play','return'],
     emulator:{path:'sdmc:/switch/mgba/mgba.nro',argument:'absolute ROM path',previewLaunchesEmulator:false}
@@ -235,7 +269,8 @@ async function exportModels(){
       for(const child of node.children)copy.add(copyNode(child));
       return copy;
     }
-    const output=new THREE.Group();output.name='PocketShelfAssets';output.add(copyNode(rack),copyNode(machine));
+    const output=new THREE.Group();output.name='PocketShelfAssets';output.userData={hardware:REFERENCE.model,referenceMillimeters:REFERENCE.bodyMm,millimetersPerSceneUnit:144.5/3.78};
+    const handheld=copyNode(machine);handheld.quaternion.copy(machine.userData.restQuaternion);output.add(copyNode(rack),handheld);
     for(let i=0;i<carts.length;i++){
       if(!carts[i])continue;const pose=home(i);if(!pose.visible)continue;
       const copy=copyNode(carts[i]);copy.visible=true;copy.position.copy(pose.position);copy.rotation.copy(pose.rotation);copy.scale.setScalar(pose.scale);output.add(copy);
@@ -261,9 +296,10 @@ async function setup(){
   rack=makeShelf();machine=makeHandheld();artifacts.add(rack,machine);arrange();
   await loadGames();
   ui.previous.addEventListener('click',()=>select(state.selected-1));ui.next.addEventListener('click',()=>select(state.selected+1));ui.insert.addEventListener('click',insert);ui.back.addEventListener('click',back);ui.refresh.addEventListener('click',()=>{if(state.mode==='browse')loadGames();});
-  document.addEventListener('keydown',keyboard);renderer.domElement.addEventListener('pointerdown',pointerDown);renderer.domElement.addEventListener('pointermove',pointerMove);renderer.domElement.addEventListener('pointerup',pointerUp);renderer.domElement.addEventListener('pointercancel',()=>{if(dragging){const cart=dragging.cart;dragging=null;state.returnFrom={position:cart.position.clone(),quaternion:cart.quaternion.clone(),scale:cart.scale.x};state.mode='return';state.started=performance.now()/1000;describe();}});
+  document.addEventListener('keydown',keyboard);renderer.domElement.addEventListener('pointerdown',pointerDown);renderer.domElement.addEventListener('pointermove',pointerMove);renderer.domElement.addEventListener('pointerup',pointerUp);renderer.domElement.addEventListener('pointercancel',()=>{if(dragging){const cart=dragging.cart;dragging=null;stage.classList.remove('is-dragging');state.returnFrom=captureReturn(cart);state.mode='return';state.started=performance.now()/1000;describe();}});
   el('sound').addEventListener('click',()=>{state.sound=!state.sound;el('sound').setAttribute('aria-pressed',String(state.sound));el('sound').setAttribute('aria-label',state.sound?'关闭音效':'开启音效');el('sound').textContent=state.sound?'声音开':'声音关';if(state.sound)sound('select');});
   el('shell').addEventListener('change',e=>{machine.userData.shell.color.set(SHELLS[e.target.value]);machine.userData.back.color.set(SHELLS[e.target.value]).multiplyScalar(.81);});
+  el('view-back').addEventListener('click',()=>{if(state.mode!=='browse'&&state.mode!=='play')return;state.inspectBack=!state.inspectBack;el('view-back').setAttribute('aria-pressed',String(state.inspectBack));el('view-back').textContent=state.inspectBack?'查看正面':'查看背面';});
   el('speed').addEventListener('input',e=>{state.speed=Number(e.target.value);el('speed-value').textContent=`${state.speed}×`;});
   el('reduce-motion').checked=state.reduced;el('reduce-motion').addEventListener('change',e=>state.reduced=e.target.checked);
   el('export-model').addEventListener('click',exportModels);

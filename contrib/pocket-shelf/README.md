@@ -4,11 +4,14 @@ A cartridge-style frontend experiment for mGBA, aimed at Nintendo Switch.
 
 让选游戏像挑一张实体卡带：浏览收藏 → 拿起 → 插入掌机 → 开机 → 交给 mGBA。
 
+![AGB-001-shaped handheld and short GBA cartridges](docs/gba-preview.png)
+
 ## What works today / 当前可用
 
 - Interactive Three.js browser prototype, including drag-and-drop, insertion, boot and eject.
 - Local ROM-folder catalogue and same-name PNG/JPEG covers, with custom cartridge-label fallback.
 - Keyboard controls, optional sound, shell colors and reduced motion.
+- AGB-001-inspired contoured shell and correctly proportioned short GBA cartridges, based on [Nintendo's original hardware references](HARDWARE_REFERENCES.md).
 - GLB model and motion-parameter exports for a later native renderer.
 - CMake presets for a native macOS SDL/OpenGL debugging baseline and Switch cross-compilation.
 
@@ -39,6 +42,7 @@ For a genuinely empty shelf instead of sample cards, set `POCKET_DEMO=0`.
 - A selected cartridge can also be dragged onto the handheld.
 - Same-name covers can live next to the ROM, in its `covers` subfolder, or in `assets/covers`.
 - The workbench beneath the preview exports `.glb` models and motion JSON.
+- Its “查看背面” control exposes the rear cartridge bay; insertion turns the handheld around before seating the pak label-out.
 
 The local server listens on loopback only. Its catalogue omits absolute filesystem paths and does not serve ROM bytes.
 

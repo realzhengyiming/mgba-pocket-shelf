@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { BODY,GAMEPAK,SLOT } from './hardware.js';
 
 const plasticNoise=(()=>{const c=document.createElement('canvas');c.width=c.height=128;const ctx=c.getContext('2d'),d=ctx.createImageData(128,128);let seed=7;for(let i=0;i<d.data.length;i+=4){seed=(seed*1664525+1013904223)>>>0;const v=180+(seed>>>25);d.data[i]=d.data[i+1]=d.data[i+2]=v;d.data[i+3]=255;}ctx.putImageData(d,0,0);const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(5,5);return t;})();
 const mat=(color,extra={})=>new THREE.MeshPhysicalMaterial({color,roughness:.62,metalness:0,clearcoat:.1,clearcoatRoughness:.7,bumpMap:plasticNoise,bumpScale:.003,...extra});
@@ -43,17 +44,21 @@ function cartLabel(game,theme,image){
 }
 export function makeCartridge(game,index){
   const theme=gameTheme(game,index),group=new THREE.Group();group.name=`Cartridge_${index}`;group.userData.gameIndex=index;
-  const caseMaterial=mat(theme.shell),edgeMaterial=mat(theme.dark);
-  // A stepped outline, recessed label, screws, molded ribs and separate gold contacts.
-  const shape=new THREE.Shape();shape.moveTo(-.63,-.65);shape.lineTo(.63,-.65);shape.quadraticCurveTo(.71,-.65,.71,-.57);shape.lineTo(.71,.42);shape.lineTo(.56,.42);shape.lineTo(.56,.56);shape.quadraticCurveTo(.56,.61,.51,.61);shape.lineTo(-.51,.61);shape.quadraticCurveTo(-.56,.61,-.56,.56);shape.lineTo(-.56,.42);shape.lineTo(-.71,.42);shape.lineTo(-.71,-.57);shape.quadraticCurveTo(-.71,-.65,-.63,-.65);
-  const body=new THREE.Mesh(new THREE.ExtrudeGeometry(shape,{depth:.125,bevelEnabled:true,bevelSegments:3,steps:1,bevelSize:.023,bevelThickness:.025,curveSegments:12}),caseMaterial);body.castShadow=true;body.receiveShadow=true;body.position.z=-.07;group.add(body);
-  add(group,rounded(1.2,.86,.014,.055,edgeMaterial),0,-.02,.102);
-  const label=labelPlane(1.14,.82,cartLabel(game,theme));add(group,label,0,-.02,.12);group.userData.label=label;
-  add(group,labelPlane(.94,.11,textCanvas('POCKET  GAME',512,80,theme.dark,34)),0,.49,.118);
-  for(let i=0;i<4;i++)for(const side of[-1,1])add(group,rounded(.061,.013,.013,.004,edgeMaterial),side*.655,.27-i*.05,.099);
-  for(const x of[-.57,.57]){add(group,disk(.027,.008,mat('#87947c',{metalness:.35,roughness:.5})),x,-.51,.109);add(group,rounded(.033,.004,.005,.001,mat('#4f6653')),x,-.51,.116);}
-  add(group,rounded(.49,.088,.04,.01,mat('#3d5545')),0,-.665,.008);
-  for(let i=0;i<10;i++)add(group,rounded(.029,.08,.007,.002,mat('#c3a466',{metalness:.55,roughness:.35})),-.198+i*.044,-.666,.032);
+  const shell=mat('#66646b'),edge=mat('#3f3e46'),w=GAMEPAK.width,h=GAMEPAK.height,d=GAMEPAK.depth;
+  // AGB-002: the 60 x 34.5 mm short, wide shell, with a slightly wider top stop.
+  const shape=new THREE.Shape();shape.moveTo(-w/2+.04,-h/2);shape.lineTo(w/2-.04,-h/2);shape.quadraticCurveTo(w/2-.018,-h/2,w/2-.018,-h/2+.035);shape.lineTo(w/2-.018,h/2-.16);shape.lineTo(w/2,h/2-.16);shape.lineTo(w/2,h/2-.025);shape.quadraticCurveTo(w/2,h/2,w/2-.025,h/2);shape.lineTo(-w/2+.025,h/2);shape.quadraticCurveTo(-w/2,h/2,-w/2,h/2-.025);shape.lineTo(-w/2,h/2-.16);shape.lineTo(-w/2+.018,h/2-.16);shape.lineTo(-w/2+.018,-h/2+.035);shape.quadraticCurveTo(-w/2+.018,-h/2,-w/2+.04,-h/2);
+  const geometry=new THREE.ExtrudeGeometry(shape,{depth:d-.024,bevelEnabled:true,bevelSegments:2,bevelSize:.012,bevelThickness:.012,curveSegments:10});geometry.center();geometry.computeBoundingBox();const size=new THREE.Vector3();geometry.boundingBox.getSize(size);geometry.scale(w/size.x,h/size.y,d/size.z);
+  const body=new THREE.Mesh(geometry,shell);body.name='AGB002ShortShell';body.castShadow=true;body.receiveShadow=true;group.add(body);
+  add(group,rounded(1.17,.615,.012,.034,edge),0,-.047,d/2+.004);
+  const label=labelPlane(1.125,.575,cartLabel(game,theme));add(group,label,0,-.047,d/2+.012);group.userData.label=label;
+  add(group,labelPlane(1.20,.085,textCanvas('GAME BOY ADVANCE',640,64,'#a5a1ab',31)),0,.338,d/2+.013);
+  for(const side of[-1,1])add(group,rounded(.015,.46,.008,.003,edge),side*(w/2-.075),-.068,d/2+.004);
+  // Pins are inside the bottom connector; the shell does not have front screws.
+  add(group,rounded(1.30,.035,.095,.006,mat('#292930')),0,-h/2+.018,0);
+  const gold=mat('#b99b58',{metalness:.55,roughness:.4});
+  for(let i=0;i<32;i++)add(group,rounded(.019,.012,.068,.001,gold),-.635+i*.041,-h/2+.009,0);
+  const back=labelPlane(1.13,.32,textCanvas('Nintendo   AGB-002',512,120,'#8e8b94',27));back.rotation.y=Math.PI;add(group,back,0,.09,-d/2-.007);
+  const screw=add(group,disk(.027,.007,mat('#33333b')),0,-.27,-d/2-.003);screw.rotation.x=-Math.PI/2;
   group.traverse(o=>{if(o.isMesh)o.userData.gameIndex=index;});
   if(game.cover){const image=new Image();image.onload=()=>{label.material.map.dispose();label.material.map=texture(cartLabel(game,theme,image));label.material.needsUpdate=true;};image.src=game.cover;}
   return group;
@@ -63,39 +68,50 @@ export function makeShelf(){
   add(group,rounded(5.4,.17,1.16,.12,mat('#d8d3bf')),0,-.36,.07);
   add(group,rounded(5.25,.06,1.05,.075,mat('#e8e4d4')),0,-.255,.06);
   add(group,rounded(5.08,.037,.12,.03,mat('#c4c5b0')),0,-.203,.46);
-  for(const x of[-1.76,0,1.76])add(group,rounded(1.48,.024,.19,.025,mat('#bcc2ac')),x,-.212,.04);
+  for(const x of[-1.62,0,1.62])add(group,rounded(1.60,.024,.25,.025,mat('#bcc2ac')),x,-.212,.04);
   return group;
 }
-export const SHELLS={sage:'#dce1cb',cream:'#eee5cf',indigo:'#8d91ab'};
+export const SHELLS={indigo:'#64549c',cream:'#e5e4df',sage:'#a1b09b'};
 export function makeHandheld(){
-  const group=new THREE.Group();group.name='PocketAdvance';
-  const shell=mat(SHELLS.sage),back=mat('#aeb79b'),buttonMat=mat('#d4b178'),dark=mat('#596a4c');
-  const body=add(group,rounded(3.78,2.08,.41,.23,back),0,0,0);
-  add(group,rounded(3.77,2.04,.28,.23,shell),0,.018,.09);
-  add(group,rounded(3.53,.018,.013,.003,mat('#c3ccb1')),0,-.65,.24);
-  const shoulder=mat('#bec9ae');add(group,rounded(.83,.17,.39,.055,shoulder),-1.33,.968,-.03);add(group,rounded(.83,.17,.39,.055,shoulder),1.33,.968,-.03);
-  const slot=add(group,rounded(1.52,.033,.22,.016,mat('#47513e')),0,1.029,-.05);slot.name='CartridgeSlot';
-  add(group,rounded(1.36,.037,.15,.018,mat('#223729')),0,1.044,-.055);
-  add(group,rounded(2.13,1.56,.067,.12,mat('#aab89a')),0,.12,.257);
-  add(group,rounded(2.035,1.45,.05,.105,mat('#586d4d')),0,.13,.292);
-  add(group,rounded(1.92,1.34,.027,.075,dark),0,.15,.327);
+  const group=new THREE.Group();group.name='GameBoyAdvance_AGB001';
+  const shell=mat(SHELLS.indigo),back=mat('#50437d'),buttonMat=mat('#c6c8cd'),dark=mat('#24252c');
+  const outline=()=>{const s=new THREE.Shape();s.moveTo(0,1);s.bezierCurveTo(-.49,1,-.93,.97,-1.23,.83);s.bezierCurveTo(-1.54,.79,-1.77,.82,-1.81,.61);s.bezierCurveTo(-1.87,.28,-1.87,-.40,-1.79,-.60);s.bezierCurveTo(-1.67,-.83,-.82,-1,0,-1);s.bezierCurveTo(.82,-1,1.67,-.83,1.79,-.60);s.bezierCurveTo(1.87,-.40,1.87,.28,1.81,.61);s.bezierCurveTo(1.77,.82,1.54,.79,1.23,.83);s.bezierCurveTo(.93,.97,.49,1,0,1);return s;};
+  const bodyGeometry=new THREE.ExtrudeGeometry(outline(),{depth:BODY.depth-.16,bevelEnabled:true,bevelSegments:5,steps:1,bevelSize:.08,bevelThickness:.08,curveSegments:24});bodyGeometry.center();bodyGeometry.computeBoundingBox();const bounds=new THREE.Vector3();bodyGeometry.boundingBox.getSize(bounds);bodyGeometry.scale(BODY.width/bounds.x,BODY.height/bounds.y,BODY.depth/bounds.z);
+  const body=add(group,new THREE.Mesh(bodyGeometry,back));body.name='AGB001Body';body.castShadow=true;body.receiveShadow=true;
+  const faceGeometry=bodyGeometry.clone();faceGeometry.scale(.998,.998,.25);const face=add(group,new THREE.Mesh(faceGeometry,shell),0,.002,BODY.depth*.375);face.name='AGB001FrontShell';face.castShadow=true;face.receiveShadow=true;
+  const shoulder=mat('#b9bdc7');for(const side of[-1,1]){const k=add(group,rounded(.89,.18,.44,.075,shoulder),side*1.38,.854,-.026);k.rotation.z=-side*.13;}
+  // Rear bay and guide rails. The short pak is flush with the top when seated.
+  const slot=add(group,rounded(1.66,.95,.014,.036,mat('#2c2939')),0,.586,-BODY.depth/2-.004);slot.name='CartridgeSlot';
+  const rail=mat('#6c5b9f');for(const side of[-1,1])add(group,rounded(.045,.89,.058,.018,rail),side*.815,.586,-BODY.depth/2-.021);
+  add(group,rounded(1.67,.058,.095,.018,rail),0,.12,-BODY.depth/2-.027);
+  add(group,rounded(1.64,.026,.10,.012,mat('#292635')),0,BODY.height/2-.014,SLOT.seated[2]);
+  const battery=add(group,rounded(2.0,1.04,.04,.13,back),0,-.47,-BODY.depth/2-.012);battery.name='BatteryCover';
+  for(let i=0;i<3;i++)add(group,rounded(.71,.018,.012,.007,rail),0,-.065-i*.043,-BODY.depth/2-.039);
+  const rearText=labelPlane(1.46,.44,textCanvas('GAME BOY ADVANCE · AGB-001',900,180,'#a49ab9',34));rearText.rotation.y=Math.PI;add(group,rearText,0,-.49,-BODY.depth/2-.037);
+  for(const side of[-1,1]){const screw=add(group,disk(.035,.008,mat('#33303e')),side*1.40,-.57,-BODY.depth/2-.014);screw.rotation.x=-Math.PI/2;}
+  add(group,rounded(.36,.075,.15,.012,mat('#4a455b')),0,.996,.19);
+  add(group,rounded(.28,.042,.11,.008,mat('#24232b')),0,1.016,.194);
+  add(group,rounded(2.03,1.76,.042,.12,mat('#16171e')),0,.054,BODY.depth/2+.021);
+  add(group,rounded(1.95,1.68,.021,.097,dark),0,.062,BODY.depth/2+.049);
   const screenCanvas=document.createElement('canvas');screenCanvas.width=480;screenCanvas.height=320;
   const screenTex=texture(screenCanvas);
-  const screen=new THREE.Mesh(new THREE.PlaneGeometry(1.64,1.09),new THREE.MeshBasicMaterial({map:screenTex}));add(group,screen,0,.20,.346);screen.name='Display';
-  add(group,labelPlane(1.66,.12,textCanvas('POCKET   ADVANCE',512,60,'#bcc8a9',26)),0,-.485,.349);
+  const screen=new THREE.Mesh(new THREE.PlaneGeometry(1.603,1.069),new THREE.MeshBasicMaterial({map:screenTex}));add(group,screen,0,.13,BODY.depth/2+.063);screen.name='Display';
+  add(group,labelPlane(1.63,.125,textCanvas('GAME BOY ADVANCE',800,65,'#d9d9df',36)),0,-.65,BODY.depth/2+.065);
+  add(group,labelPlane(.55,.105,textCanvas('Nintendo',360,70,'#9f91bf',36)),0,.978,BODY.depth/2-.014);
   // D-pad assembly, distinct key surfaces and shallow center well.
-  add(group,disk(.37,.016,mat('#c4ccb5')),-1.405,.15,.25);
-  const dpad=new THREE.Group();dpad.name='DPad';group.add(dpad);dpad.position.set(-1.405,.15,.282);
-  add(dpad,rounded(.19,.58,.055,.035,mat('#415a43')));add(dpad,rounded(.58,.19,.055,.035,mat('#415a43')));
-  add(dpad,disk(.073,.009,mat('#3c533d')),0,0,.032);
-  for(const [x,y,letter]of[[1.48,.34,'A'],[1.23,-.03,'B']]){
-    add(group,disk(.195,.014,mat('#bfc9ac')),x,y,.25);add(group,disk(.151,.071,mat('#b3915e')),x,y,.282);
-    add(group,disk(.145,.035,buttonMat),x,y,.32);add(group,labelPlane(.135,.15,textCanvas(letter,80,80,'#7b623e',49)),x,y,.341);
+  add(group,disk(.325,.016,mat('#51447f')),-1.365,.16,BODY.depth/2+.002);
+  const dpad=new THREE.Group();dpad.name='DPad';group.add(dpad);dpad.position.set(-1.365,.16,BODY.depth/2+.025);
+  add(dpad,rounded(.18,.60,.07,.023,buttonMat));add(dpad,rounded(.60,.18,.07,.023,buttonMat));
+  add(dpad,disk(.073,.009,mat('#b1b5bc')),0,0,.04);
+  for(const [x,y,letter]of[[1.50,.24,'A'],[1.19,.035,'B']]){
+    add(group,disk(.17,.014,mat('#51447f')),x,y,BODY.depth/2+.003);add(group,disk(.142,.071,mat('#969ba6')),x,y,BODY.depth/2+.035);
+    add(group,disk(.139,.035,buttonMat),x,y,BODY.depth/2+.072);add(group,labelPlane(.095,.11,textCanvas(letter,80,80,'#818690',48)),x,y,BODY.depth/2+.093);
   }
-  for(const [x,word]of[[-.34,'SELECT'],[.16,'START']]){const k=add(group,rounded(.3,.065,.055,.031,mat('#a4b093')),x,-.81,.28);k.rotation.z=.13;add(group,labelPlane(.31,.07,textCanvas(word,120,36,'#849574',22)),x,-.92,.287);}
-  const ledMat=new THREE.MeshBasicMaterial({color:'#8fa477'});const led=add(group,new THREE.Mesh(new THREE.SphereGeometry(.026,12,8),ledMat),1.15,.722,.282);
-  add(group,labelPlane(.33,.065,textCanvas('POWER',160,40,'#899777',23)),1.39,.722,.276);
-  for(let x=0;x<5;x++)for(let y=0;y<3;y++)add(group,disk(.012,.006,mat('#98a789')),1.07+x*.075,-.73-y*.06,.272);
+  for(const [y,word]of[[-.43,'START'],[-.65,'SELECT']]){add(group,disk(.064,.035,buttonMat),-1.16,y,BODY.depth/2+.015);add(group,labelPlane(.38,.085,textCanvas(word,200,42,'#b5a9d2',26)),-1.46,y,BODY.depth/2+.028);}
+  const ledMat=new THREE.MeshBasicMaterial({color:'#66754b'});add(group,new THREE.Mesh(new THREE.SphereGeometry(.031,12,8),ledMat),1.32,.795,BODY.depth/2+.011);
+  add(group,labelPlane(.37,.068,textCanvas('POWER',160,40,'#a498c4',23)),1.32,.695,BODY.depth/2+.025);
+  for(let i=0;i<6;i++){const slit=add(group,rounded(.39,.021,.012,.009,mat('#403761')),1.34,-.43-i*.064,BODY.depth/2+.013);slit.rotation.z=.28;}
+  add(group,rounded(.30,.07,.14,.018,mat('#494452')),-.83,-.977,.04);
   group.userData={shell,back,screenCanvas,screenTex,ledMat,slot,body};
   updateScreen(group,'off');return group;
 }
