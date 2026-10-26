@@ -6,6 +6,10 @@ on:
   pull_request:
     paths:
       - contrib/pocket-shelf/**
+      - src/platform/pocket-shelf/**
+      - src/platform/switch/**
+      - src/feature/gui/gui-runner.*
+      - CMakeLists.txt
       - CMakePresets.json
       - .github/workflows/pocket-shelf.yml
   workflow_dispatch:
@@ -31,6 +35,19 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y cmake libsdl2-dev libgl1-mesa-dev pkg-config
+      - run: sudo apt-get update && sudo apt-get install -y cmake libsdl2-dev libgl1-mesa-dev libfreetype6-dev libpng-dev pkg-config
       - run: cmake --preset pocket-linux-debug
       - run: cmake --build --preset pocket-linux-debug --parallel 2
+      - run: ./build-pocket-linux/pocket-shelf/pocket-shelf-tests
+  switch-build:
+    runs-on: ubuntu-24.04
+    container: devkitpro/devkita64:20260219@sha256:1fc388c3a0d34bd2045a6dadcb1020e069d5f876a187fd705de14b4440c00282
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake --preset pocket-switch
+      - run: cmake --build --preset pocket-switch --parallel 2
+      - run: python3 contrib/pocket-shelf/tools/package-switch.py build-pocket-switch/switch/mgba.nro dist/pocket-shelf
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mgba-pocket-shelf-switch
+          path: dist/pocket-shelf/

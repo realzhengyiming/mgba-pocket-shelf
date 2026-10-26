@@ -1,25 +1,57 @@
 # Pocket Shelf / 口袋卡带架
 
-A cartridge-style frontend experiment for mGBA, aimed at Nintendo Switch.
+A cartridge-style frontend for this mGBA fork: browse your ROM folder, choose a short GBA cartridge, insert it into the back of an AGB-001-style handheld, then launch the game.
 
-让选游戏像挑一张实体卡带：浏览收藏 → 拿起 → 插入掌机 → 开机 → 交给 mGBA。
+![Native C/OpenGL frontend on Mac](docs/native-preview.png)
 
-![AGB-001-shaped handheld and short GBA cartridges](docs/gba-preview.png)
+## Current status / 当前状态
 
-## What works today / 当前可用
+**The C/OpenGL ES frontend is integrated into the Switch version and cross-compiles to an NRO. Switch hardware testing is still pending.**
 
-- Interactive Three.js browser prototype, including drag-and-drop, insertion, boot and eject.
-- Local ROM-folder catalogue and same-name PNG/JPEG covers, with custom cartridge-label fallback.
-- Keyboard controls, optional sound, shell colors and reduced motion.
-- AGB-001-inspired contoured shell and correctly proportioned short GBA cartridges, based on [Nintendo's original hardware references](HARDWARE_REFERENCES.md).
-- GLB model and motion-parameter exports for a later native renderer.
-- CMake presets for a native macOS SDL/OpenGL debugging baseline and Switch cross-compilation.
+- The shared native C layer scans ROM folders recursively, preserves actual filenames and reads same-name PNG covers. Missing covers get an original generated label.
+- Native models reuse the [AGB-001 / short GBA cartridge design](HARDWARE_REFERENCES.md), with rear insertion, front boot, cancellation, ejection and reduced motion.
+- Switch reuses the original mGBA game loader, controls, audio, saves and pause menu. Exiting a game returns to the shelf. Minus opens the original file picker.
+- CJK font rendering, nearby-cover caching and GPU teardown before emulation are implemented.
+- The desktop debugger uses the same renderer/state machine and launches the SDL emulator. Actual Mac launch/return and a 240-frame ROM smoke test passed.
+- CI builds desktop and Switch targets. The package script checks the actual NRO's identity and embedded assets before producing the SD layout and checksum.
 
-**The browser prototype does not launch mGBA. The new cartridge UI has not been ported to or tested on Switch yet.**
+原生版已经接入；当前是等待 Switch 实机验收的测试版。实机流畅度、睡眠恢复、底座切换和存档连续性还要逐项确认。原生版暂未移植网页的自由拖拽、声音和换色；封面先支持本地 PNG，JPEG 和自动联网匹配尚未接入。
 
-网页原型不会启动游戏。目前原生构建运行的仍是 mGBA 本来的 SDL 界面；新的 3D 卡带界面尚未接入原生前端。自动联网匹配封面也尚未实现。
+[安装和今晚测试步骤](SWITCH_TEST.md) · [Architecture / integration details](ARCHITECTURE.md)
 
-## Preview / 预览
+## Native desktop debugging
+
+macOS requirements: Xcode command-line tools, CMake 3.21+, SDL2, FreeType, libpng and pkg-config. The Mac debug target currently requires macOS 15+ because its Homebrew dependencies are built for that minimum version.
+
+```sh
+brew install cmake sdl2 freetype libpng pkg-config
+cmake --preset pocket-macos-debug
+cmake --build --preset pocket-macos-debug --parallel 4
+./build-pocket-macos/pocket-shelf/mgba-pocket-shelf --roms /absolute/path/to/roms
+```
+
+Run from the repository root. Left/right selects, Enter/A inserts, Esc/B cancels, Y inspects the rear, X rescans, R toggles reduced motion and Q exits. The Mac adapter launches the existing SDL executable via `posix_spawn`; Switch uses the in-process `mGUIRunner` hook. This debug `.app` is tied to the build directory and dependencies; it is not a portable Mac release.
+
+```sh
+./build-pocket-macos/pocket-shelf/pocket-shelf-tests
+./build-pocket-macos/pocket-shelf/mgba-pocket-shelf --roms /absolute/path/to/roms --self-test-rom /absolute/path/to/roms/game.gba
+```
+
+The second command renders the actual native UI, inserts a cartridge, runs that ROM for 240 frames without writing a save, recreates the renderer and returns the cartridge. Add `--screenshots /existing/output/dir` for checkpoints. No ROM is bundled in this repository.
+
+## Switch build and SD package
+
+With the official devkitPro Switch toolchain and portlibs installed:
+
+```sh
+cmake --preset pocket-switch
+cmake --build --preset pocket-switch --parallel 4
+python3 contrib/pocket-shelf/tools/package-switch.py build-pocket-switch/switch/mgba.nro dist/pocket-shelf
+```
+
+The CI container is pinned to the verified `devkitpro/devkita64:20260219` manifest digest recorded in the workflow and package build information. It includes libnx 4.12.0 and the linked port libraries. Models, the CJK font and licenses are embedded in RomFS. The package installs to `/switch/mgba-pocket-shelf/mgba-pocket-shelf.nro`, alongside the existing mGBA.
+
+## Browser design reference / 网页原型
 
 ```sh
 cd contrib/pocket-shelf/preview
@@ -27,57 +59,11 @@ npm ci
 npm run dev
 ```
 
-Open <http://127.0.0.1:3764>. With no game files present, clearly marked design-only sample cards are shown. No ROMs are bundled.
+Open <http://127.0.0.1:3764>. The web prototype supports mouse dragging, optional sound, shell colors, rear inspection, and GLB/motion export. It **does not launch games**; the native program above does.
 
-默认扫描 `contrib/pocket-shelf/roms`，也可以指定自己的目录：
+Default ROM folder: `contrib/pocket-shelf/roms`. Override with `POCKET_ROMS=/absolute/path/to/roms npm run dev`. Without game files, the web preview displays clearly marked design-only sample cards. Use `POCKET_DEMO=0` for an empty shelf. Same-name web covers may be PNG/JPEG; native covers are PNG.
 
-```sh
-POCKET_ROMS=/absolute/path/to/roms npm run dev
-```
-
-For a genuinely empty shelf instead of sample cards, set `POCKET_DEMO=0`.
-
-- Left/right: choose a cartridge.
-- Enter / A: insert. Esc / B: cancel or eject. X: rescan.
-- A selected cartridge can also be dragged onto the handheld.
-- Same-name covers can live next to the ROM, in its `covers` subfolder, or in `assets/covers`.
-- The workbench beneath the preview exports `.glb` models and motion JSON.
-- Its “查看背面” control exposes the rear cartridge bay; insertion turns the handheld around before seating the pak label-out.
-
-The local server listens on loopback only. Its catalogue omits absolute filesystem paths and does not serve ROM bytes.
-
-## Native development / 原生调试
-
-Requirements on macOS: Xcode command-line tools, CMake 3.21+, SDL2 and pkg-config. For a supported Homebrew installation:
-
-```sh
-brew install cmake sdl2 pkg-config
-cmake --preset pocket-macos-debug
-cmake --build --preset pocket-macos-debug --parallel 4
-./build-pocket-macos/sdl/mgba /absolute/path/to/game.gba
-```
-
-Run these commands from the repository root. The exact SDL executable path is `build-pocket-macos/sdl/mgba`.
-
-This builds mGBA itself as a native Mac app, with debug symbols and a compilation database. It is a baseline for later frontend work, not the new 3D UI. VS Code/LLDB can attach to this executable.
-
-To check that desktop OpenGL really creates a context, compiles shaders and draws pixels on your machine:
-
-```sh
-cc contrib/pocket-shelf/tools/probe-opengl.c $(pkg-config --cflags --libs sdl2) -framework OpenGL -o build-pocket-macos/pocket-gl-probe
-./build-pocket-macos/pocket-gl-probe
-```
-
-Mac 上先调界面、资源加载、动画与输入逻辑；开发虚拟机只负责准备工具和交叉编译，不是在模拟一台 Switch。掌机按键、SD 路径、NRO 切换、睡眠恢复与性能必须在 Switch 上验收。
-
-With a devkitPro Switch environment installed:
-
-```sh
-cmake --preset pocket-switch
-cmake --build --preset pocket-switch --parallel 4
-```
-
-The Switch preset is prepared for later cross-build verification. See [ARCHITECTURE.md](ARCHITECTURE.md) for the proposed native integration.
+The browser server listens on loopback only, omits absolute paths from its catalogue and never serves ROM bytes. Model and motion exports are design assets; JavaScript/DOM code is not embedded in the native program.
 
 ## Checks
 
@@ -86,10 +72,10 @@ cd contrib/pocket-shelf/preview
 npm test
 ```
 
-The tests cover catalogue scanning, filename preservation, duplicate identities, deterministic insertion timing, reduced motion, and the preview server's file-serving boundary.
+The browser tests cover safe catalogue scanning, filename preservation, duplicate identities, animation lifecycle, reduced motion and the serving boundary. Native tests cover catalogue/cover handling, symlink loops, cancellation continuity, safe insertion/ejection and reduced motion. Mac native state tests also passed AddressSanitizer/UndefinedBehaviorSanitizer.
 
 ## License and upstream
 
-The original mGBA license and attribution are retained. New Pocket Shelf source in this fork is MPL-2.0; third-party assets retain their own licenses, listed in [NOTICE.md](NOTICE.md).
+Original mGBA attribution and MPL-2.0 are retained. Pocket Shelf source, baked geometry and original illustrative labels are MPL-2.0. Third-party notices are in [NOTICE.md](NOTICE.md) and `licenses`; the bundled Noto Sans SC font is SIL OFL.
 
-This fork includes AI-assisted development. Upstream's contribution policy does not accept AI-generated pull requests; these changes are maintained in this fork and are not being submitted upstream.
+This fork contains AI-assisted development. Upstream's policy does not accept AI-generated pull requests; these changes remain in this fork and are not submitted upstream. No game ROMs, user saves, credentials or private machine configuration are included.

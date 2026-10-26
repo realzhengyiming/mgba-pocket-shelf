@@ -81,6 +81,8 @@ struct mGUIRunner {
 	int32_t totalDelta;
 	struct mCircleBuffer fpsBuffer;
 
+	/* Optional ROM picker: 1 = selected, 0 = exit, -1 = original file browser. */
+	int (*selectGame)(struct mGUIRunner*, char* path, size_t capacity);
 	void (*setup)(struct mGUIRunner*);
 	void (*teardown)(struct mGUIRunner*);
 	void (*gameLoaded)(struct mGUIRunner*);

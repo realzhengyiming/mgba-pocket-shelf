@@ -38,7 +38,8 @@
                 "USE_SQLITE3": "OFF",
                 "USE_EPOXY": "OFF",
                 "USE_DISCORD_RPC": "OFF",
-                "USE_ELF": "OFF"
+                "USE_ELF": "OFF",
+                "BUILD_POCKET_SHELF_DESKTOP": "ON"
             }
         },
         {
@@ -78,7 +79,9 @@
                 "BUILD_SDL": "OFF",
                 "BUILD_PERF": "OFF",
                 "USE_DISCORD_RPC": "OFF",
-                "USE_FFMPEG": "OFF"
+                "USE_FFMPEG": "OFF",
+                "BUILD_POCKET_SHELF": "ON",
+                "USE_FREETYPE": "OFF"
             }
         }
     ],

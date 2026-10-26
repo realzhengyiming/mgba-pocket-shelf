@@ -1,0 +1,26 @@
+{
+  "format": "PSM1",
+  "source": "Pocket Shelf AGB-001 browser model export",
+  "license": "MPL-2.0",
+  "groups": [
+    "CartridgeRack",
+    "GameBoyAdvance_AGB001",
+    "Cartridge_0"
+  ],
+  "batches": 16,
+  "vertices": 228612,
+  "textures": {
+    "1": "texture-01.png",
+    "2": "texture-02.png",
+    "3": "texture-03.png",
+    "4": "texture-04.png",
+    "5": "texture-05.png",
+    "6": "texture-06.png",
+    "7": "texture-07.png",
+    "8": "texture-08.png",
+    "9": "texture-09.png",
+    "10": "texture-10.png",
+    "11": "texture-11.png",
+    "12": "texture-12.png"
+  }
+}

@@ -1,6 +1,6 @@
 > **Pocket Shelf fork:** A cartridge-style frontend experiment for Nintendo Switch.
 > See the [interactive preview, native build setup and current status](contrib/pocket-shelf/README.md).
-> The new 3D interface is currently a browser prototype; native integration is in development.
+> The C/OpenGL ES frontend now builds into a Switch NRO; native Mac tests pass, and Switch hardware validation is pending.
 
 mGBA
 ====

@@ -771,8 +771,20 @@ void mGUIRunloop(struct mGUIRunner* runner) {
 		if (preselect) {
 			++preselect;
 		}
-		if (!GUISelectFile(&runner->params, path, sizeof(path), _testExtensions, NULL, preselect)) {
+		int selected = runner->selectGame ? runner->selectGame(runner, path, sizeof(path)) : -1;
+		if (selected < 0) {
+			selected = GUISelectFile(&runner->params, path, sizeof(path), _testExtensions, NULL, preselect);
+		}
+		if (!selected) {
 			break;
+		}
+		/* Custom pickers return the real ROM path; keep save/config behavior shared. */
+		if (runner->selectGame && selected > 0) {
+			const char* slash = strrchr(path, '/');
+			if (slash && (size_t) (slash - path) < sizeof(runner->params.currentPath)) {
+				memcpy(runner->params.currentPath, path, slash - path);
+				runner->params.currentPath[slash - path] = '\0';
+			}
 		}
 		mCoreConfigSetValue(&runner->config, "lastDirectory", runner->params.currentPath);
 		mCoreConfigSetValue(&runner->config, "lastGame", path);

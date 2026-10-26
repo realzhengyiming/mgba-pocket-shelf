@@ -838,6 +838,9 @@ static void hidTeardown(void) {
 	hidStopSixAxisSensor(sixaxisHandles[2]);
 	hidStopSixAxisSensor(sixaxisHandles[3]);
 }
+#ifdef ENABLE_POCKET_SHELF
+#include "pocket-shelf.inc"
+#endif
 
 int main(int argc, char* argv[]) {
 	NWindow* window = nwindowGetDefault();
@@ -1047,6 +1050,9 @@ int main(int argc, char* argv[]) {
 			},
 		},
 		.nConfigExtra = 6,
+#ifdef ENABLE_POCKET_SHELF
+		.selectGame = _selectPocketGame,
+#endif
 		.setup = _setup,
 		.teardown = NULL,
 		.gameLoaded = _gameLoaded,
@@ -1076,6 +1082,9 @@ int main(int argc, char* argv[]) {
 		if (vf) {
 			size_t size = vf->size(vf);
 			const char* arg0 = strchr(argv[0], '/');
+			if (!arg0) {
+				arg0 = argv[0];
+			}
 			char* buffer[2] = {
 				calloc(size + 1, 1),
 				malloc(size + strlen(arg0) + 1)
@@ -1084,7 +1093,11 @@ int main(int argc, char* argv[]) {
 			vf->close(vf);
 			snprintf(buffer[1], size + strlen(arg0), buffer[0], arg0);
 			mkdir("sdmc:/config/nx-hbmenu/fileassoc", 0755);
+#ifdef ENABLE_POCKET_SHELF
+			vf = VFileOpen("sdmc:/config/nx-hbmenu/fileassoc/mgba-pocket.cfg", O_CREAT | O_TRUNC | O_WRONLY);
+#else
 			vf = VFileOpen("sdmc:/config/nx-hbmenu/fileassoc/mgba.cfg", O_CREAT | O_TRUNC | O_WRONLY);
+#endif
 			if (vf) {
 				vf->write(vf, buffer[1], strlen(buffer[1]));
 				vf->close(vf);

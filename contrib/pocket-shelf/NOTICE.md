@@ -6,3 +6,5 @@
 - **Noto Sans SC:** SIL Open Font License 1.1, <https://github.com/notofonts/noto-cjk>. The font is included under `assets/fonts` with its license.
 
 Game names identify the sample games. No game ROMs, user saves, credentials, or private machine configuration are included.
+
+The Switch native build additionally links the existing devkitPro graphics/libnx stack and FreeType/HarfBuzz/bzip2 for CJK text. Notices copied from the verified toolchain packages and primary upstream sources are in `licenses/`. Font licensing remains SIL OFL. The geometry draw-stream is baked from this project's original procedural browser meshes; no external handheld model or Nintendo product photograph is embedded.
