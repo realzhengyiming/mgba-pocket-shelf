@@ -57,6 +57,13 @@ Run these commands from the repository root. The exact SDL executable path is `b
 
 This builds mGBA itself as a native Mac app, with debug symbols and a compilation database. It is a baseline for later frontend work, not the new 3D UI. VS Code/LLDB can attach to this executable.
 
+To check that desktop OpenGL really creates a context, compiles shaders and draws pixels on your machine:
+
+```sh
+cc contrib/pocket-shelf/tools/probe-opengl.c $(pkg-config --cflags --libs sdl2) -framework OpenGL -o build-pocket-macos/pocket-gl-probe
+./build-pocket-macos/pocket-gl-probe
+```
+
 Mac 上先调界面、资源加载、动画与输入逻辑；开发虚拟机只负责准备工具和交叉编译，不是在模拟一台 Switch。掌机按键、SD 路径、NRO 切换、睡眠恢复与性能必须在 Switch 上验收。
 
 With a devkitPro Switch environment installed:
