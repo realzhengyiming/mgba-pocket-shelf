@@ -16,7 +16,7 @@ add_dependencies(mgba-pocket-shelf ${BINARY_NAME}-sdl)
 add_executable(pocket-shelf-tests tests.c pocket-shelf.c)
 target_link_libraries(pocket-shelf-tests PRIVATE ${M_LIBRARY})
 enable_testing()
-add_test(NAME pocket-shelf-native COMMAND pocket-shelf-tests)
+add_test(NAME pocket-shelf-native COMMAND pocket-shelf-tests "${PROJECT_SOURCE_DIR}/contrib/pocket-shelf/assets/native/boot-chime.wav")
 
 if(APPLE)
     set(POCKET_APP "${CMAKE_BINARY_DIR}/Pocket Shelf.app")

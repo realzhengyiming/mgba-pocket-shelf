@@ -39,7 +39,7 @@ struct Cover {
 	GLuint texture;
 };
 struct PSRenderer {
-	GLuint program, ui, fbo, color, depth, atlas, white, uiVao, uiVbo;
+	GLuint program, ui, fbo, color, depth, atlas, white, bootLogo, uiVao, uiVbo;
 	GLuint textures[MAX_TEXTURES];
 	GLint model, view, baseTexture, textured, unlit, opacity, screenBoot;
 	GLint uiColor, uiTexture, uiMode;
@@ -68,13 +68,37 @@ static const char* sceneFS = SHADER_HEADER
     "in vec3 n; in vec2 t; in vec4 c; out vec4 frag;\n"
     "uniform sampler2D image; uniform int textured; uniform int unlit; uniform float opacity; uniform float "
     "screenBoot;\n"
+    "float edge(int i){if(i==0)return 68.;if(i==1)return 114.;if(i==2)return 157.;if(i==3)return 223.;if(i==4)return "
+    "272.;if(i==5)return 323.;if(i==6)return 366.;return 412.;}\n"
+    "vec3 rainbow(float h){return clamp(abs(fract(vec3(h)+vec3(0.,.6666667,.3333333))*6.-3.)-1.,0.,1.);}\n"
+    "vec3 bootImage(){\n"
+    " vec2 p=vec2(t.x,1.-t.y)*vec2(480.,320.);float sec=screenBoot*3.9;vec3 rgb=vec3(1.);\n"
+    " for(int i=0;i<7;i++){\n"
+    "  float u=clamp((sec-.46-float(i)*.085)/1.22,0.,1.),dy,sc,v;\n"
+    "  if(u<.25){v=smoothstep(0.,.25,u);dy=240.-395.*v;sc=7.5-5.*v;}\n"
+    "  else if(u<.55){v=smoothstep(.25,.55,u);dy=-155.*(1.-v);sc=2.5-1.55*v;}\n"
+    "  else if(u<.72){v=smoothstep(.55,.72,u);dy=-13.*v;sc=.95+.05*v;}\n"
+    "  else{dy=-13.*(1.-smoothstep(.72,1.,u));sc=1.;}\n"
+    "  float lo=edge(i),hi=edge(i+1),cx=(lo+hi)*.5;\n"
+    "  vec2 src=(p-vec2(cx,152.+dy))/sc+vec2(cx,152.);\n"
+    "  if(src.x>=lo&&src.x<hi&&src.y>=105.&&src.y<205.){\n"
+    "   float mask=texture(image,vec2(src.x/480.,1.-src.y/320.)).a*smoothstep(0.,.08,u);\n"
+    "   vec3 ink=mix(rainbow(.87+float(i)*.1+u*.6)*.96,vec3(0.,0.,.4392),smoothstep(.55,1.,u));\n"
+    "   float wave=(sec-2.38)/1.15,d=src.x-(25.+wave*440.);"
+    "float pink=wave>=0.&&wave<=1.?max(0.,1.-abs(d+27.)/33.)*.85:0.;"
+    "float shine=wave>=0.&&wave<=1.?max(0.,1.-abs(d)/12.)*.95:0.;\n"
+    "   ink=mix(ink,vec3(.8235,0.,.8118),pink);ink=mix(ink,vec3(1.),shine);rgb=mix(rgb,ink,mask);\n"
+    "  }\n"
+    " }\n"
+    " if(p.y>=230.){float mask=texture(image,t).a*clamp(sec/.45,0.,1.);rgb=mix(rgb,vec3(.69,0.,.69),mask);}\n"
+    " return rgb;\n"
+    "}\n"
     "void main(){vec4 a=c;if(textured==1){vec4 s=texture(image,t);a*=vec4(pow(s.rgb,vec3(2.2)),s.a);}\n"
-    "if(screenBoot>=0.){a=vec4(mix(vec3(.028,.07,.036),vec3(.52,.64,.33),screenBoot),1.);"
-    "float "
-    "line=step(abs(t.y-.3),.006)*step(t.x,.2+.6*screenBoot)*step(.2,t.x);a.rgb=mix(a.rgb,vec3(.15,.24,.09),line);}\n"
-    "vec3 light=normalize(vec3(-.4,.8,.7));float diffuse=max(0.,dot(normalize(n),light));"
-    "float shade=unlit==1?1.:.62+.58*diffuse;vec3 rgb=pow(clamp(a.rgb*shade,0.,1.),vec3(1./2.2));"
-    "frag=vec4(rgb,a.a*opacity);if(frag.a<.015)discard;}\n";
+    " if(screenBoot>=0.)a=vec4(pow(bootImage(),vec3(2.2)),1.);\n"
+    " vec3 light=normalize(vec3(-.4,.8,.7));float diffuse=max(0.,dot(normalize(n),light));\n"
+    " float shade=unlit==1?1.:.62+.58*diffuse;vec3 rgb=pow(clamp(a.rgb*shade,0.,1.),vec3(1./2.2));\n"
+    " frag=vec4(rgb,a.a*opacity);if(frag.a<.015)discard;\n"
+    "}\n";
 static const char* uiVS = SHADER_HEADER "in vec2 position; in vec2 uv; out vec2 t; void "
                                         "main(){t=uv;gl_Position=vec4(position.x/640.-1.,1.-position.y/360.,0,1);}\n";
 static const char* uiFS =
@@ -413,12 +437,13 @@ static struct PSVec cross(struct PSVec a, struct PSVec b) {
 static float dot(struct PSVec a, struct PSVec b) {
 	return a.x * b.x + a.y * b.y + a.z * b.z;
 }
-static void projection(float m[16]) {
+static void projection(float m[16], float viewportHeight) {
 	struct PSVec eye = { 3.2f, 5.2f, 12 }, target = { -.13f, .58f, 0 }, up = { 0, 1, 0 };
 	struct PSVec z = normalize((struct PSVec) { eye.x - target.x, eye.y - target.y, eye.z - target.z }),
 	             x = normalize(cross(up, z)), y = cross(z, x);
 	float v[] = { x.x, y.x, z.x, 0, x.y, y.y, z.y, 0, x.z, y.z, z.z, 0, -dot(x, eye), -dot(y, eye), -dot(z, eye), 1 };
-	float p[] = { 2 / 13.8f, 0, 0, 0, 0, 2 / 3.795f, 0, 0, 0, 0, -2 / 99.9f, 0, 0, 0, -100.1f / 99.9f, 1 };
+	float p[] = { 2 / 13.8f,       0, 0, 0, 0, 2 / (13.8f * viewportHeight / 1200), 0, 0, 0, 0, -2 / 99.9f, 0, 0, 0,
+	              -100.1f / 99.9f, 1 };
 	multiply(p, v, m);
 }
 static void model(struct PSRenderer* r, unsigned group, struct PSPose pose, GLuint cover, float alpha, float boot) {
@@ -432,7 +457,10 @@ static void model(struct PSRenderer* r, unsigned group, struct PSPose pose, GLui
 		struct Batch* b = &r->batches[i];
 		if (b->group != group)
 			continue;
-		GLuint image = b->role == 1 ? cover : b->texture >= 0 ? r->textures[b->texture] : 0;
+		GLuint image = b->role == 2 && boot >= 0 ? r->bootLogo :
+		    b->role == 1                         ? cover :
+		    b->texture >= 0                      ? r->textures[b->texture] :
+		                                           0;
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, image ? image : r->white);
 		glUniform1i(r->textured, image != 0);
@@ -554,6 +582,13 @@ struct PSRenderer* PSRendererCreate(const char* assets, const char* font, char* 
 		         glGetError());
 		goto fail;
 	}
+	char bootPath[PATH_MAX];
+	snprintf(bootPath, sizeof(bootPath), "%s/boot-logo.png", assets);
+	r->bootLogo = pngTexture(bootPath, true);
+	if (!r->bootLogo) {
+		snprintf(r->error, sizeof(r->error), "Boot logo texture missing");
+		goto fail;
+	}
 	if (!loadModel(r))
 		goto fail;
 	glBindVertexArray(0);
@@ -580,6 +615,7 @@ void PSRendererDestroy(struct PSRenderer* r) {
 			glDeleteTextures(1, &r->covers[i].texture);
 	glDeleteTextures(MAX_TEXTURES, r->textures);
 	glDeleteTextures(1, &r->white);
+	glDeleteTextures(1, &r->bootLogo);
 	glDeleteTextures(1, &r->atlas);
 	glDeleteTextures(1, &r->color);
 	glDeleteRenderbuffers(1, &r->depth);
@@ -624,8 +660,10 @@ void PSRendererDraw(struct PSRenderer* r, const struct PSCatalog* c, const struc
 	glDisable(GL_DEPTH_TEST);
 	glClearColor(.95f, .94f, .91f, 1);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	const float ink[] = { .22f, .27f, .21f, 1 }, muted[] = { .53f, .56f, .47f, 1 }, line[] = { .83f, .83f, .77f, 1 },
-	            green[] = { .41f, .49f, .32f, 1 }, light[] = { .97f, .96f, .89f, 1 };
+	float uiAlpha = 1 - s->presentation;
+	const float ink[] = { .22f, .27f, .21f, uiAlpha }, muted[] = { .53f, .56f, .47f, uiAlpha },
+	            line[] = { .83f, .83f, .77f, uiAlpha }, green[] = { .41f, .49f, .32f, uiAlpha },
+	            light[] = { .97f, .96f, .89f, uiAlpha };
 	text(r, 64, 62, 30, "pocket shelf", 580, ink);
 	text(r, 275, 60, 18, "口袋卡带架 · mGBA", 800, muted);
 	rect(r, 64, 86, 1152, 1, line);
@@ -634,20 +672,24 @@ void PSRendererDraw(struct PSRenderer* r, const struct PSCatalog* c, const struc
 	char buffer[128];
 	snprintf(buffer, sizeof(buffer), "%02zu  CARTRIDGES", c->count);
 	text(r, 1015, 157, 20, buffer, 230, green);
-	const float shadow[] = { .32f, .35f, .27f, .13f };
+	const float shadow[] = { .32f, .35f, .27f, .13f * uiAlpha };
 	quad(r, 110, 367, 550, 130, 0, 0, 1, 1, 0, 3, shadow);
 	quad(r, 765, 365, 410, 150, 0, 0, 1, 1, 0, 3, shadow);
-	glViewport(40, 185, 1200, 330);
+	float viewportHeight = 330 + s->presentation * 240;
+	glViewport(40, (int) (185 - s->presentation * 110), 1200, (int) viewportHeight);
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LEQUAL);
 	glClear(GL_DEPTH_BUFFER_BIT);
 	float vp[16];
-	projection(vp);
+	projection(vp, viewportHeight);
 	glUseProgram(r->program);
 	glUniformMatrix4fv(r->view, 1, GL_FALSE, vp);
 	struct PSPose rack = { { -2.62f, 0, .15f }, { 0, 0, 0, 1 }, 1 };
-	model(r, 0, rack, 0, 1, -1);
-	model(r, 1, PSHandheldPose(s->facing), 0, 1, s->mode == PS_INSERT ? s->boot : s->mode == PS_READY ? 1 : 0);
+	model(r, 0, rack, 0, uiAlpha, -1);
+	model(r, 1, PSHandheldPose(s->facing, s->presentation, s->focus), 0, 1,
+	      s->mode == PS_INSERT    ? s->boot :
+	          s->mode == PS_READY ? 1 :
+	                                -1);
 	if (c->count)
 		for (size_t i = first; i <= last; ++i) {
 			float offset = (float) i - s->scroll;
@@ -657,6 +699,7 @@ void PSRendererDraw(struct PSRenderer* r, const struct PSCatalog* c, const struc
 			if (i == s->selected && s->mode != PS_BROWSE)
 				pose = s->card;
 			float alpha = 1 - fmaxf(0, (fabsf(offset) - 1.0f) / .75f);
+			alpha *= uiAlpha;
 			if (i == s->selected)
 				alpha = 1;
 			model(r, 2, pose, covers[i - first], alpha, -1);
@@ -695,6 +738,16 @@ void PSRendererDraw(struct PSRenderer* r, const struct PSCatalog* c, const struc
 	else
 		text(r, 65, 719, 13, s->reduced ? "减少动画已开启 · ZR 切换" : "ZR 减少动画 · 退出游戏后回到卡带架", 1150,
 		     muted);
+	if (s->presentation > 0) {
+		const float caption[] = { .30f, .37f, .27f, s->presentation };
+		text(r, 64, 62, 24, "pocket shelf", 600, caption);
+		text(r, 64, 666, 20, s->boot >= 0 ? "GAME BOY · 正在开机" : "插好卡带，让冒险开始", 900, caption);
+		text(r, 1060, 666, 18, "B 取消", 170, caption);
+	}
+	if (s->fade > 0) {
+		const float fade[] = { .97f, .98f, 1, s->fade };
+		rect(r, 0, 0, WIDTH, HEIGHT, fade);
+	}
 	glBindVertexArray(0);
 	glUseProgram(0);
 }

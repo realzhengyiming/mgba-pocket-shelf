@@ -19,6 +19,15 @@ export async function scanLibrary(root, assets, depth=0) {
     const stat=await fs.stat(p);
     if(stat.size<192||stat.size>64*1024*1024)continue;
     const title=path.basename(e.name,path.extname(e.name));
+    let code='';
+    if(/^\.(gba|agb)$/i.test(path.extname(e.name))){
+      const file=await fs.open(p,'r');
+      try {
+        const h=Buffer.alloc(192);const {bytesRead}=await file.read(h,0,h.length,0);
+        const valid=bytesRead===192&&h[0xB2]===0x96&&((h.subarray(0xA0,0xBE).reduce((sum,v)=>sum+v,0x19)&255)===0);
+        if(valid&&/^[A-Z0-9]{4}$/.test(h.toString('ascii',0xAC,0xB0)))code=h.toString('ascii',0xAC,0xB0);
+      } finally {await file.close();}
+    }
     let cover=null;
     for(const dir of [root,path.join(root,'covers'),assets]){
       if(!dir)continue;
@@ -28,7 +37,11 @@ export async function scanLibrary(root, assets, depth=0) {
       }
       if(cover)break;
     }
-    games.push({id:createHash('sha256').update(p).digest('hex').slice(0,16),path:p,filename:e.name,title,system:path.extname(e.name).toLowerCase()==='.gb'?'GB':path.extname(e.name).toLowerCase()==='.gbc'?'GBC':'GBA',bytes:stat.size,cover});
+    if(!cover&&code){
+      const candidate=path.join(root,'covers',code+'.png');
+      try {if((await fs.lstat(candidate)).isFile())cover=candidate;}catch{}
+    }
+    games.push({code,id:createHash('sha256').update(p).digest('hex').slice(0,16),path:p,filename:e.name,title,system:path.extname(e.name).toLowerCase()==='.gb'?'GB':path.extname(e.name).toLowerCase()==='.gbc'?'GBC':'GBA',bytes:stat.size,cover});
   }
   return games.sort((a,b)=>a.title.localeCompare(b.title,'zh-CN')||a.path.localeCompare(b.path));
 }

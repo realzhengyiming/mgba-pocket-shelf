@@ -52,6 +52,49 @@ static int _pocketStartupError(struct mGUIRunner* runner, const char* error) {
 	return 0;
 }
 
+struct PocketSound {
+	int16_t* pcm;
+	size_t frames, cursor;
+	bool started;
+};
+static void _pocketSoundUpdate(struct PocketSound* sound, const struct PSState* state) {
+	bool boot = state->mode == PS_INSERT && state->boot >= 0 && !state->reduced;
+	if (!boot) {
+		if (sound->started) {
+			audrvVoiceStop(&audrenDriver, 0);
+			audrvUpdate(&audrenDriver);
+		}
+		sound->started = false;
+		return;
+	}
+	if (!sound->pcm)
+		return;
+	if (!sound->started) {
+		_resetSampleRate((u32) (32768 * fpsRatio));
+		sound->cursor = 0;
+		sound->started = true;
+	}
+	audrvUpdate(&audrenDriver);
+	bool queued = false;
+	for (unsigned i = 0; i < N_BUFFERS && sound->cursor < sound->frames; ++i) {
+		if (audrvBuffer[i].state != AudioDriverWaveBufState_Free &&
+		    audrvBuffer[i].state != AudioDriverWaveBufState_Done)
+			continue;
+		size_t take = sound->frames - sound->cursor;
+		if (take > SAMPLES)
+			take = SAMPLES;
+		memset(audioBuffer[i], 0, SAMPLES * sizeof(struct mStereoSample));
+		memcpy(audioBuffer[i], sound->pcm + sound->cursor * 2, take * sizeof(struct mStereoSample));
+		sound->cursor += take;
+		armDCacheFlush(audioBuffer[i], SAMPLES * sizeof(struct mStereoSample));
+		audrvVoiceAddWaveBuf(&audrenDriver, 0, &audrvBuffer[i]);
+		queued = true;
+	}
+	if (queued && !audrvVoiceIsPlaying(&audrenDriver, 0))
+		audrvVoiceStart(&audrenDriver, 0);
+	audrvUpdate(&audrenDriver);
+}
+
 static int _selectPocketGame(struct mGUIRunner* runner, char* path, size_t capacity) {
 	static bool returning;
 	u64 totalMemory = 0, usedMemory = 0;
@@ -79,6 +122,8 @@ static int _selectPocketGame(struct mGUIRunner* runner, char* path, size_t capac
 		PSCatalogClear(&catalog);
 		return _pocketStartupError(runner, error);
 	}
+	struct PocketSound sound = { 0 };
+	sound.pcm = PSBootAudioLoad("romfs:/pocket-shelf/boot-chime.wav", &sound.frames);
 	_pocketLog("READY: native shelf initialized; games=%zu root=%s", catalog.count, root);
 	double origin = armGetSystemTick() / 19200000.;
 	if (returning && catalog.count)
@@ -178,6 +223,7 @@ static int _selectPocketGame(struct mGUIRunner* runner, char* path, size_t capac
 		}
 		PSStateAction(&state, actions, catalog.count, now);
 		PSStateUpdate(&state, now);
+		_pocketSoundUpdate(&sound, &state);
 		PSRendererDraw(renderer, &catalog, &state, NULL);
 		PSRendererPresent(renderer, 0, 1080 - vheight, vwidth, vheight);
 		eglSwapBuffers(s_display, s_surface);
@@ -192,6 +238,11 @@ static int _selectPocketGame(struct mGUIRunner* runner, char* path, size_t capac
 			break;
 		}
 	}
+	if (sound.started) {
+		audrvVoiceStop(&audrenDriver, 0);
+		audrvUpdate(&audrenDriver);
+	}
+	free(sound.pcm);
 	mCoreConfigSetIntValue(&runner->config, "pocketShelfReducedMotion", state.reduced);
 	mCoreConfigSave(&runner->config);
 	PSRendererDestroy(renderer);

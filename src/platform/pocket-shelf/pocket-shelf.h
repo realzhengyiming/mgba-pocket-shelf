@@ -8,8 +8,10 @@
 #define PATH_MAX 4096
 #endif
 #define PS_MAX_GAMES 4096
-#define PS_INSERT_SECONDS 3.05f
-#define PS_RETURN_SECONDS 1.25f
+#define PS_BOOT_SECONDS 3.9f
+#define PS_BOOT_BEGIN 2.85f
+#define PS_INSERT_SECONDS (PS_BOOT_BEGIN + PS_BOOT_SECONDS + .25f)
+#define PS_RETURN_SECONDS 2.0f
 
 enum PSAction {
 	PS_LEFT = 1,
@@ -29,6 +31,7 @@ struct PSGame {
 	char* cover;
 	uint64_t bytes;
 	char system[4];
+	char code[5];
 };
 struct PSCatalog {
 	struct PSGame* games;
@@ -61,12 +64,13 @@ struct PSState {
 	float scroll;
 	bool reduced, inspectBack;
 	double began, lastUpdate;
-	float facing, slide, boot;
+	float facing, slide, boot, presentation, focus, fade;
 	struct PSPose card, cancelCard, insertCard;
-	float cancelFacing, cancelSlide, insertFacing;
+	float cancelFacing, cancelSlide, insertFacing, cancelPresentation, cancelFocus;
 	bool cancelSeated;
 };
 
+int16_t* PSBootAudioLoad(const char* path, size_t* frames);
 void PSCatalogClear(struct PSCatalog*);
 bool PSCatalogScan(struct PSCatalog*, const char* root);
 size_t PSCatalogFind(const struct PSCatalog*, const char* path);
@@ -79,7 +83,7 @@ bool PSGestureMove(struct PSState*, size_t count, float x, float y, double now);
 enum PSGestureResult PSGestureEnd(struct PSState*, size_t count, float x, float y, double now, bool cancelled);
 void PSGestureCancel(struct PSState*, size_t count, double now);
 unsigned PSShelfTapAction(struct PSState*, size_t count, float x, float y);
-struct PSPose PSHandheldPose(float facing);
+struct PSPose PSHandheldPose(float facing, float presentation, float focus);
 struct PSPose PSCardHome(float offset);
 struct PSVec PSVecMix(struct PSVec a, struct PSVec b, float t);
 struct PSQuat PSQuatMix(struct PSQuat a, struct PSQuat b, float t);

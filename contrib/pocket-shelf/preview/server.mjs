@@ -9,7 +9,7 @@ import { demoLibrary } from './source/demo-library.mjs';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = process.env.POCKET_ROMS || path.resolve(here, '../roms');
 const port = Number(process.env.POCKET_PORT || 3764);
-const mime = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.mjs':'text/javascript; charset=utf-8', '.css':'text/css; charset=utf-8', '.png':'image/png', '.jpg':'image/jpeg', '.json':'application/json', '.otf':'font/otf', '.svg':'image/svg+xml' };
+const mime = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.mjs':'text/javascript; charset=utf-8', '.css':'text/css; charset=utf-8', '.png':'image/png', '.jpg':'image/jpeg', '.json':'application/json', '.otf':'font/otf', '.svg':'image/svg+xml', '.wav':'audio/wav' };
 const coverFiles = new Map();
 const serveRoots = {
   '/vendor/three/': path.join(here, 'node_modules/three/'),
@@ -38,7 +38,7 @@ const server = http.createServer(async (req,res)=>{
       target=path.resolve(base, relative || 'index.html');
       if(!target.startsWith(base + path.sep) && target!==path.join(base,'index.html')) {res.writeHead(403);res.end();return;}
       // Do not expose server source, credentials, ROM files, or arbitrary project files.
-      if(!['.html','.js','.mjs','.css','.png','.jpg','.json','.otf','.svg'].includes(path.extname(target)))target=null;
+      if(!['.html','.js','.mjs','.css','.png','.jpg','.json','.otf','.svg','.wav'].includes(path.extname(target)))target=null;
       if(target?.endsWith('server.mjs')||target?.endsWith('package-lock.json'))target=null;
     }
     if(!target){res.writeHead(404);res.end();return;}

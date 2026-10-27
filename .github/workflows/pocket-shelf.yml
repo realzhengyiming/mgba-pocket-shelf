@@ -38,7 +38,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y cmake libsdl2-dev libgl1-mesa-dev libfreetype6-dev libpng-dev pkg-config
       - run: cmake --preset pocket-linux-debug
       - run: cmake --build --preset pocket-linux-debug --parallel 2
-      - run: ./build-pocket-linux/pocket-shelf/pocket-shelf-tests
+      - run: ctest --test-dir build-pocket-linux/pocket-shelf --output-on-failure
   switch-build:
     runs-on: ubuntu-24.04
     container: devkitpro/devkita64:20260219@sha256:1fc388c3a0d34bd2045a6dadcb1020e069d5f876a187fd705de14b4440c00282

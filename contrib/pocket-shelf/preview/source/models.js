@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import {BOOT_SECONDS,LETTER_EDGES,bootLetter} from './boot.js';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { BODY,GAMEPAK,SLOT } from './hardware.js';
@@ -95,7 +96,7 @@ export function makeHandheld(){
   add(group,rounded(1.95,1.68,.021,.097,dark),0,.062,BODY.depth/2+.049);
   const screenCanvas=document.createElement('canvas');screenCanvas.width=480;screenCanvas.height=320;
   const screenTex=texture(screenCanvas);
-  const screen=new THREE.Mesh(new THREE.PlaneGeometry(1.603,1.069),new THREE.MeshBasicMaterial({map:screenTex}));add(group,screen,0,.13,BODY.depth/2+.063);screen.name='Display';
+  const screen=new THREE.Mesh(new THREE.PlaneGeometry(1.603,1.069),new THREE.MeshBasicMaterial({map:screenTex,toneMapped:false}));add(group,screen,0,.13,BODY.depth/2+.063);screen.name='Display';
   add(group,labelPlane(1.63,.125,textCanvas('GAME BOY ADVANCE',800,65,'#d9d9df',36)),0,-.65,BODY.depth/2+.065);
   add(group,labelPlane(.55,.105,textCanvas('Nintendo',360,70,'#9f91bf',36)),0,.978,BODY.depth/2-.014);
   // D-pad assembly, distinct key surfaces and shallow center well.
@@ -115,13 +116,48 @@ export function makeHandheld(){
   group.userData={shell,back,screenCanvas,screenTex,ledMat,slot,body};
   updateScreen(group,'off');return group;
 }
+const bootLogo=new Image();bootLogo.src='/assets/native/boot-logo.png';
+const bootParts=[];
+function tintedMask(x,y,w,h){
+  const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
+  const ctx=canvas.getContext('2d');ctx.drawImage(bootLogo,x,y,w,h,0,0,w,h);
+  return {canvas,ctx};
+}
+function sweep(ctx,seconds,origin,width,height){
+  const wave=(seconds-2.38)/1.15;if(wave<0||wave>1)return;
+  const x=25+wave*440-origin;
+  for(const [center,radius,color,alpha] of [[x-27,33,'210,0,207',.85],[x,12,'255,255,255',.95]]){
+    const gradient=ctx.createLinearGradient(center-radius,0,center+radius,0);
+    gradient.addColorStop(0,`rgba(${color},0)`);gradient.addColorStop(.5,`rgba(${color},${alpha})`);gradient.addColorStop(1,`rgba(${color},0)`);
+    ctx.fillStyle=gradient;ctx.fillRect(0,0,width,height);
+  }
+}
+function drawBoot(ctx,progress){
+  ctx.fillStyle='#fff';ctx.fillRect(0,0,480,320);
+  if(!bootLogo.complete||!bootLogo.naturalWidth)return;
+  if(!bootParts.length){
+    for(let i=0;i<7;i++)bootParts.push(tintedMask(LETTER_EDGES[i],105,LETTER_EDGES[i+1]-LETTER_EDGES[i],100));
+    bootParts.push(tintedMask(145,230,190,40));
+  }
+  for(let i=0;i<7;i++){
+    const p=bootLetter(i,progress),part=bootParts[i],pen=part.ctx;
+    // Reconstruct rainbow entry, settling and the second magenta highlight wave.
+    pen.globalCompositeOperation='source-in';pen.fillStyle=`hsl(${p.hue} 100% 48%)`;pen.fillRect(0,0,part.canvas.width,100);pen.globalCompositeOperation='source-atop';
+    pen.fillStyle=`rgba(0,0,112,${p.settle})`;pen.fillRect(0,0,part.canvas.width,100);
+    sweep(pen,p.seconds,LETTER_EDGES[i],part.canvas.width,100);
+    ctx.save();ctx.globalAlpha=p.alpha;ctx.translate(p.center,152+p.y);ctx.scale(p.scale,p.scale);ctx.drawImage(part.canvas,-part.canvas.width/2,-47);ctx.restore();
+  }
+  const part=bootParts[7];part.ctx.globalCompositeOperation='source-in';part.ctx.fillStyle='#b000b0';part.ctx.fillRect(0,0,190,40);part.ctx.globalCompositeOperation='source-atop';sweep(part.ctx,progress*BOOT_SECONDS,145,190,40);
+  ctx.save();ctx.globalAlpha=Math.min(1,progress*BOOT_SECONDS/.45);ctx.drawImage(part.canvas,145,230);ctx.restore();
+}
 export function updateScreen(group,mode,title='',progress=0){
   const {screenCanvas:canvas,screenTex,ledMat}=group.userData,ctx=canvas.getContext('2d');
   const lit=mode!=='off';ctx.fillStyle=lit?'#c5d5a3':'#314b37';ctx.fillRect(0,0,480,320);
   ctx.fillStyle=lit?'#758b5830':'#8293740a';for(let y=0;y<320;y+=4)ctx.fillRect(0,y,480,1);
   ctx.textAlign='center';
   if(mode==='off'){ctx.font='500 26px PocketSans';ctx.fillStyle='#9dab85';ctx.fillText('等一盘好游戏',240,147);ctx.font='500 12px PocketSans';ctx.fillStyle='#788d69';ctx.fillText('INSERT A CARTRIDGE',240,187);}
-  else if(mode==='boot'){ctx.fillStyle='#536c3e';ctx.font='600 57px PocketSans';ctx.fillText('POCKET',240,141);ctx.font='500 17px PocketSans';ctx.fillText('A LITTLE ADVENTURE',240,186);ctx.fillStyle='#94aa73';ctx.fillRect(162,226,156,3);ctx.fillStyle='#536c3e';ctx.fillRect(162,226,156*progress,3);}
-  else {ctx.fillStyle='#566e43';ctx.font='500 22px PocketSans';ctx.fillText('READY TO PLAY',240,98);ctx.font='500 30px PocketSans';ctx.fillText(title,240,166,428);ctx.font='500 14px PocketSans';ctx.fillText('交互预览完成',240,224);}
+  else {
+    drawBoot(ctx,mode==='play'?1:progress);
+  }
   screenTex.needsUpdate=true;ledMat.color.set(lit?'#a0bc5e':'#8fa477');
 }

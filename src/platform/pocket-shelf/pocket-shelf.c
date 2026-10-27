@@ -9,12 +9,42 @@
 #include <strings.h>
 #include <sys/stat.h>
 
+/* The generated asset is canonical PCM16 stereo / 32768 Hz, with a 44-byte WAV header. */
+int16_t* PSBootAudioLoad(const char* path, size_t* frames) {
+	*frames = 0;
+	FILE* f = fopen(path, "rb");
+	if (!f)
+		return NULL;
+	unsigned char h[44];
+	int16_t* samples = NULL;
+	if (fread(h, 1, 44, f) != 44 || memcmp(h, "RIFF", 4) || memcmp(h + 8, "WAVEfmt ", 8) ||
+	    memcmp(h + 16, "\x10\0\0\0\x01\0\x02\0\0\x80\0\0\0\0\x02\0\x04\0\x10\0data", 24))
+		goto done;
+	uint32_t bytes = (uint32_t) h[40] | (uint32_t) h[41] << 8 | (uint32_t) h[42] << 16 | (uint32_t) h[43] << 24;
+	if (!bytes || bytes % 4 || bytes > 32768 * 4 * 5)
+		goto done;
+	samples = malloc(bytes);
+	if (!samples)
+		goto done;
+	if (fread(samples, 1, bytes, f) != bytes) {
+		free(samples);
+		samples = NULL;
+	} else
+		*frames = bytes / 4;
+done:
+	fclose(f);
+	return samples;
+}
 static float clamp(float t) {
 	return fmaxf(0, fminf(1, t));
 }
 static float smooth(float t) {
 	t = clamp(t);
 	return t * t * (3 - 2 * t);
+}
+static float settle(float t) {
+	t = clamp(t);
+	return t * t * t * (t * (t * 6 - 15) + 10);
 }
 static float out(float t) {
 	t = 1 - clamp(t);
@@ -86,7 +116,7 @@ static bool regular(const char* path) {
 	struct stat s;
 	return !lstat(path, &s) && S_ISREG(s.st_mode);
 }
-static char* coverFor(const char* path, const char* name) {
+static char* coverFor(const char* path, const char* name, const char* code) {
 	char stem[PATH_MAX], dir[PATH_MAX], test[PATH_MAX];
 	snprintf(stem, sizeof(stem), "%s", name);
 	char* dot = strrchr(stem, '.');
@@ -104,7 +134,33 @@ static char* coverFor(const char* path, const char* name) {
 		if (n > 0 && n < (int) sizeof(test) && regular(test))
 			return strdup(test);
 	}
+	if (code[0]) {
+		int n = snprintf(test, sizeof(test), "%s/covers/%s.png", dir, code);
+		if (n > 0 && n < (int) sizeof(test) && regular(test))
+			return strdup(test);
+	}
 	return NULL;
+}
+static void gameCode(const char* path, char code[5]) {
+	unsigned char header[192];
+	FILE* f = fopen(path, "rb");
+	if (!f)
+		return;
+	size_t n = fread(header, 1, sizeof(header), f);
+	fclose(f);
+	if (n != sizeof(header) || header[0xB2] != 0x96)
+		return;
+	unsigned sum = 0x19;
+	for (unsigned i = 0xA0; i <= 0xBD; ++i)
+		sum += header[i];
+	if (sum & 255)
+		return;
+	for (unsigned i = 0; i < 4; ++i)
+		if (!((header[0xAC + i] >= 'A' && header[0xAC + i] <= 'Z') ||
+		      (header[0xAC + i] >= '0' && header[0xAC + i] <= '9')))
+			return;
+	memcpy(code, header + 0xAC, 4);
+	code[4] = 0;
 }
 static bool supported(const char* name) {
 	const char* e = strrchr(name, '.');
@@ -154,10 +210,9 @@ static void scan(struct PSCatalog* c, const char* root, unsigned depth) {
 			c->games = games;
 			c->capacity = cap;
 		}
-		struct PSGame game = { .path = strdup(path),
-		                       .title = strdup(e->d_name),
-		                       .cover = coverFor(path, e->d_name),
-		                       .bytes = (uint64_t) st.st_size };
+		struct PSGame game = {
+			.path = strdup(path), .title = strdup(e->d_name), .cover = NULL, .bytes = (uint64_t) st.st_size
+		};
 		if (!game.path || !game.title) {
 			free(game.path);
 			free(game.title);
@@ -173,6 +228,9 @@ static void scan(struct PSCatalog* c, const char* root, unsigned depth) {
 		       !strcasecmp(sourceExt, ".gbc")                                         ? "GBC" :
 		           (!strcasecmp(sourceExt, ".gba") || !strcasecmp(sourceExt, ".agb")) ? "GBA" :
 		                                                                                "GB");
+		if (!strcmp(game.system, "GBA"))
+			gameCode(path, game.code);
+		game.cover = coverFor(path, e->d_name, game.code);
 		c->games[c->count++] = game;
 	}
 	closedir(d);
@@ -206,10 +264,13 @@ size_t PSCatalogFind(const struct PSCatalog* c, const char* path) {
 				return i;
 	return 0;
 }
-struct PSPose PSHandheldPose(float facing) {
-	return (struct PSPose) { { 2.43f, .68f, -.17f },
-	                         PSQuatMul(euler(-.13f, -.14f, -.055f), euler(0, 3.14159265359f * facing, 0)),
-	                         1 };
+struct PSPose PSHandheldPose(float facing, float presentation, float focus) {
+	struct PSQuat front =
+	    PSQuatMix(euler(-.13f, -.14f, -.055f), (struct PSQuat) { -.175072906f, .132808735f, .023840902f, .975265568f },
+		          presentation);
+	return (struct PSPose) { PSVecMix((struct PSVec) { 2.43f, .68f, -.17f }, (struct PSVec) { -.13f, .58f, 0 },
+	                                  presentation),
+	                         PSQuatMul(front, euler(0, 3.14159265359f * facing, 0)), 1 + focus * 1.05f };
 }
 struct PSPose PSCardHome(float offset) {
 	return (struct PSPose) { { -2.62f + offset * 1.62f, .295f - fminf(1, fabsf(offset)) * .045f,
@@ -217,15 +278,19 @@ struct PSPose PSCardHome(float offset) {
 	                         euler(-.09f, -offset * .13f, -offset * .035f),
 	                         1 - fminf(1, fabsf(offset)) * .06f };
 }
-static struct PSPose inSlot(float facing, float slide) {
-	struct PSPose machine = PSHandheldPose(facing), card;
+static struct PSPose inSlot(float facing, float slide, float presentation, float focus) {
+	struct PSPose machine = PSHandheldPose(facing, presentation, focus), card;
 	struct PSVec above = { 0, 1.7438f, -.25045f }, seated = { 0, .60928f, -.25045f };
-	card.position = PSRotate(machine.rotation, PSVecMix(above, seated, slide));
+	struct PSVec local = PSVecMix(above, seated, slide);
+	local.x *= machine.scale;
+	local.y *= machine.scale;
+	local.z *= machine.scale;
+	card.position = PSRotate(machine.rotation, local);
 	card.position.x += machine.position.x;
 	card.position.y += machine.position.y;
 	card.position.z += machine.position.z;
 	card.rotation = PSQuatMul(machine.rotation, euler(0, 3.14159265359f, 0));
-	card.scale = 1;
+	card.scale = machine.scale;
 	return card;
 }
 void PSStateInit(struct PSState* s, size_t selected) {
@@ -239,6 +304,8 @@ static void beginReturn(struct PSState* s, double now) {
 	s->cancelCard = s->card;
 	s->cancelFacing = s->facing;
 	s->cancelSlide = s->slide;
+	s->cancelPresentation = s->presentation;
+	s->cancelFocus = s->focus;
 	s->cancelSeated = s->slide > 0;
 	s->began = now;
 	s->mode = PS_RETURN;
@@ -248,7 +315,9 @@ void PSStateReturn(struct PSState* s, double now) {
 	s->facing = 0;
 	s->slide = 1;
 	s->boot = 1;
-	s->card = inSlot(0, 1);
+	s->presentation = s->focus = 1;
+	s->fade = 0;
+	s->card = inSlot(0, 1, 1, 1);
 	beginReturn(s, now);
 }
 static float boundedScroll(float value, size_t count) {
@@ -358,54 +427,63 @@ void PSStateUpdate(struct PSState* s, double now) {
 	if (s->mode == PS_BROWSE) {
 		s->facing += (s->inspectBack - s->facing) * (1 - expf(-10 * delta));
 		s->slide = 0;
-		s->boot = 0;
+		s->boot = s->presentation = s->focus = s->fade = 0;
 		s->card = PSCardHome((float) s->selected - s->scroll);
 		return;
 	}
 	if (s->mode == PS_INSERT) {
-		float pick = out(t / .95f), slide = smooth((t - 1.1f) / .65f), turn = smooth((t - 1.75f) / .65f);
-		s->facing = (s->insertFacing + (1 - s->insertFacing) * smooth(t / .76f)) * (1 - turn);
+		float pick = out((t - .55f) / .85f), slide = smooth((t - 1.55f) / .65f), turn = smooth((t - 2.2f) / .65f);
+		s->presentation = smooth(t / .55f);
+		s->focus = turn;
+		s->fade = smooth((t - PS_BOOT_BEGIN - PS_BOOT_SECONDS) / .25f);
+		s->facing = (s->insertFacing + (1 - s->insertFacing) * smooth((t - .55f) / .7f)) * (1 - turn);
 		s->slide = slide;
-		s->boot = clamp((t - 2.4f) / .65f);
-		struct PSPose home = s->insertCard, target = inSlot(1, 0);
+		s->boot = t < PS_BOOT_BEGIN ? -1 : clamp((t - PS_BOOT_BEGIN) / PS_BOOT_SECONDS);
+		struct PSPose home = s->insertCard, target = inSlot(1, 0, s->presentation, 0);
 		s->card.position = PSVecMix(home.position, target.position, pick);
 		s->card.position.y += sinf(pick * 3.14159265359f) * .48f;
 		s->card.rotation = PSQuatMix(home.rotation, target.rotation, pick);
 		s->card.scale = home.scale + (1 - home.scale) * pick;
-		if (t >= 1.1f)
-			s->card = inSlot(s->facing, slide);
+		if (t >= 1.55f)
+			s->card = inSlot(s->facing, slide, s->presentation, s->focus);
 		if (s->reduced) {
+			s->presentation = s->focus = 1;
+			s->fade = 0;
 			s->facing = 0;
-			s->slide = 1;
-			s->boot = clamp(t / .2f);
-			s->card = inSlot(0, 1);
+			s->slide = s->boot = 1;
+			s->card = inSlot(0, 1, 1, 1);
 		}
 		if (t >= (s->reduced ? .2f : PS_INSERT_SECONDS))
 			s->mode = PS_READY;
 	} else if (s->mode == PS_RETURN) {
-		float turn = smooth(t / .34f), lift = smooth((t - .34f) / .26f), fly = out((t - .6f) / .65f);
+		float turn = smooth(t / .55f), lift = smooth((t - .55f) / .4f), fly = settle((t - .95f) / 1.05f);
 		struct PSPose start = s->cancelCard;
 		s->facing = s->cancelFacing * (1 - out(t / PS_RETURN_SECONDS));
-		s->slide = 0;
-		s->boot = 0;
+		s->slide = s->fade = 0;
+		s->boot = -1;
 		if (s->cancelSeated) {
+			s->presentation = s->cancelPresentation;
+			s->focus = s->cancelFocus * (1 - turn);
 			s->facing = s->cancelFacing + (1 - s->cancelFacing) * turn;
-			start = inSlot(s->facing, s->cancelSlide * (1 - lift));
+			start = inSlot(s->facing, s->cancelSlide * (1 - lift), s->presentation, s->focus);
 			s->slide = s->cancelSlide * (1 - lift);
-			if (t > .6f)
-				s->facing = 1 - smooth((t - .6f) / .65f);
-		} else {
-			fly = out(t / .65f);
-		}
+			if (t > .95f) {
+				start = inSlot(1, 0, s->cancelPresentation, 0);
+				s->facing = 1 - smooth((t - .95f) / 1.05f);
+			}
+		} else
+			fly = settle(t / 1.05f);
+		s->presentation = s->cancelPresentation * (1 - fly);
+		if (!s->cancelSeated)
+			s->focus = s->cancelFocus * (1 - fly);
 		struct PSPose home = PSCardHome(0);
 		s->card.position = PSVecMix(start.position, home.position, fly);
 		s->card.position.y += sinf(fly * 3.14159265359f) * .7f;
 		s->card.rotation = PSQuatMix(start.rotation, home.rotation, fly);
 		s->card.scale = start.scale + (home.scale - start.scale) * fly;
-		if (t >= (s->reduced ? .2f : s->cancelSeated ? PS_RETURN_SECONDS : .65f)) {
+		if (t >= (s->reduced ? .2f : s->cancelSeated ? PS_RETURN_SECONDS : 1.05f)) {
 			s->mode = PS_BROWSE;
-			s->facing = 0;
-			s->slide = 0;
+			s->facing = s->slide = s->presentation = s->focus = 0;
 			s->card = home;
 		}
 	}

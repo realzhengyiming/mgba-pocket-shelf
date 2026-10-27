@@ -196,6 +196,17 @@ int main(int argc, char** argv) {
 			if (pad)
 				break;
 		}
+	SDL_AudioDeviceID audio = 0;
+	bool bootSound = false;
+	Uint8* wav = NULL;
+	Uint32 wavLength = 0;
+	if (!smoke && !SDL_InitSubSystem(SDL_INIT_AUDIO)) {
+		char soundPath[PATH_MAX];
+		snprintf(soundPath, sizeof(soundPath), "%s/boot-chime.wav", assets);
+		SDL_AudioSpec wanted = { 0 };
+		if (SDL_LoadWAV(soundPath, &wanted, &wav, &wavLength))
+			audio = SDL_OpenAudioDevice(NULL, 0, &wanted, NULL, 0);
+	}
 	struct DesktopPointer pointer = { 0 };
 	bool running = true;
 	int result = 0;
@@ -293,8 +304,19 @@ int main(int argc, char** argv) {
 			snprintf(notice, sizeof(notice), "Mac 调试版请从卡带架选游戏；Switch 的 − 键可打开原版文件浏览。");
 		PSStateAction(&state, actions, catalog.count, now);
 		PSStateUpdate(&state, now);
+		bool shouldSound = state.mode == PS_INSERT && state.boot >= 0 && !state.reduced;
+		if (audio && shouldSound && !bootSound) {
+			SDL_ClearQueuedAudio(audio);
+			SDL_QueueAudio(audio, wav, wavLength);
+			SDL_PauseAudioDevice(audio, 0);
+		}
+		if (audio && !shouldSound && bootSound) {
+			SDL_PauseAudioDevice(audio, 1);
+			SDL_ClearQueuedAudio(audio);
+		}
+		bootSound = shouldSound;
 		PSRendererDraw(renderer, &catalog, &state, notice);
-		if (smoke && shots && (frame == 0 || frame == 105 || state.mode == PS_READY || frame == 300)) {
+		if (smoke && shots && (frame == 0 || frame == 105 || frame == 345 || state.mode == PS_READY || frame == 600)) {
 			char path[PATH_MAX];
 			snprintf(path, sizeof(path), "%s/native-%03u.png", shots, frame);
 			if (!PSRendererScreenshot(renderer, path)) {
@@ -335,7 +357,7 @@ int main(int argc, char** argv) {
 			PSStateReturn(&state, now);
 			fprintf(stdout, "Game handoff and renderer recreation: %s\n", ok ? "PASS" : "FAIL");
 		}
-		if (smoke && frame == 300) {
+		if (smoke && frame == 600) {
 			if (state.mode != PS_BROWSE)
 				result = 1;
 			running = false;
@@ -346,6 +368,10 @@ int main(int argc, char** argv) {
 		fprintf(stderr, "%s\n", error);
 	PSRendererDestroy(renderer);
 	PSCatalogClear(&catalog);
+	if (audio)
+		SDL_CloseAudioDevice(audio);
+	if (wav)
+		SDL_FreeWAV(wav);
 	if (pad)
 		SDL_GameControllerClose(pad);
 	SDL_GL_DeleteContext(context);

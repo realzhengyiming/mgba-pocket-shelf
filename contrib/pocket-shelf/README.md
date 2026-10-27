@@ -8,17 +8,26 @@ A cartridge-style frontend for this mGBA fork: browse your ROM folder, choose a 
 
 **The C/OpenGL ES frontend is integrated into the Switch version. An initial Switch test confirmed the native shelf displays correctly; broader hardware acceptance checks continue.**
 
-- The shared native C layer scans ROM folders recursively, preserves actual filenames and reads same-name PNG covers. Missing covers get an original generated label.
+- The shared native C layer scans ROM folders recursively, preserves actual filenames and reads same-name PNG covers, then validated GBA header IDs such as `covers/BPEE.png`. Missing covers get an original generated label.
 - Horizontal touch/mouse swipes track the finger, snap with a short fling, and stay bounded at the ends. Taps and vertical/cancelled gestures are kept separate from game launch.
-- Native models reuse the [AGB-001 / short GBA cartridge design](HARDWARE_REFERENCES.md), with rear insertion, front boot, cancellation, ejection and reduced motion.
+- Native models reuse the [AGB-001 / short GBA cartridge design](HARDWARE_REFERENCES.md), with rear insertion, a centered handheld boot presentation, cancellation, smooth ejection and reduced motion.
+- Selecting a game centers the handheld, inserts the pak, runs the shared 3.9-second visual boot recreation, then fades into mGBA. Ejection shrinks the handheld before lifting the pak and smoothly returns it; B can cancel throughout. The synthesized startup flourish/bell is an approximation.
 - Switch reuses the original mGBA game loader, controls, audio, saves and pause menu. Exiting a game returns to the shelf. Minus opens the original file picker.
 - CJK font rendering, nearby-cover caching and GPU teardown before emulation are implemented.
 - The desktop debugger uses the same renderer/state machine and launches the SDL emulator. Actual Mac launch/return and a 240-frame ROM smoke test passed.
 - CI builds desktop and Switch targets. The package script checks the actual NRO's identity and embedded assets before producing the SD layout and checksum.
 
-原生版已经接入，并已在 Switch 上成功显示卡带架。当前仍是测试版；音频、按键、睡眠恢复、底座切换和存档连续性继续逐项验收。原生版暂未移植网页的自由拖拽、声音和换色；封面先支持本地 PNG，JPEG 和自动联网匹配尚未接入。
+原生版已经接入，并已在 Switch 上成功显示卡带架。当前仍是测试版；音频、按键、睡眠恢复、底座切换和存档连续性继续逐项验收。原生版暂未移植网页的自由拖拽和换色；开场和合成提示音已接入；封面支持同名 PNG 或按 GBA 编号读取本地缓存，JPEG 和自动联网下载尚未接入。
 
 [安装和今晚测试步骤](SWITCH_TEST.md) · [Architecture / integration details](ARCHITECTURE.md)
+
+## Boot presentation and covers
+
+The handheld centers before cartridge pickup, faces rearward for insertion, turns forward and plays a 3.9-second visual boot reconstruction. The rainbow letter entrances, blue settling and magenta highlight reference [this GBA startup recording](https://www.youtube.com/watch?v=6_ZD3FxMcvQ). This is a visual approximation, not BIOS execution or a frame-exact/sound-exact replacement. The original Game Boy wordmark replaces the earlier illustrative pixel font. The website retains the final logo as a preview; native Switch waits for the full presentation and white fade before handing the ROM to mGBA. B cancels throughout. Ejection takes two seconds, with a fixed canvas/viewport and continuous cartridge scale at the return boundary.
+
+Standard GBA ROM headers contain title/game-code fields, not a standard box-art image. Put a PNG beside a ROM with the same basename for a manual override, or cache an image at `roms/GBA/covers/BPEE.png` for games whose validated header code is BPEE. The browser and native catalogue use the same priority. Hacks may reuse a base game's code, so use the per-ROM override when artwork differs. No online scraping happens on Switch; missing images keep the generated label. User ROMs, downloaded commercial artwork and saves are not included in this repository.
+
+![Centered boot preview](docs/boot-preview.png)
 
 ## Native desktop debugging
 
@@ -62,7 +71,9 @@ npm run dev
 
 Open <http://127.0.0.1:3764>. The web prototype supports horizontal shelf swipes, upward cartridge pickup/dragging, optional sound, shell colors, rear inspection, and GLB/motion export. It **does not launch games**; the native program above does.
 
-Default ROM folder: `contrib/pocket-shelf/roms`. Override with `POCKET_ROMS=/absolute/path/to/roms npm run dev`. Without game files, the web preview displays clearly marked design-only sample cards. Use `POCKET_DEMO=0` for an empty shelf. Same-name web covers may be PNG/JPEG; native covers are PNG.
+Default ROM folder: `contrib/pocket-shelf/roms`. Override with `POCKET_ROMS=/absolute/path/to/roms npm run dev`. Without game files, the web preview displays clearly marked design-only sample cards. Use `POCKET_DEMO=0` for an empty shelf. Same-name web covers may be PNG/JPEG; native covers are PNG. For GBA, an intact cartridge header can identify a four-character game code. Put a cached PNG at `roms/GBA/covers/BPEE.png` to cover translated Emerald filenames sharing that code. A same-name cover takes priority, so ROM hacks can override reused codes. No network request is made from the Switch; arbitrary ROMs do not contain a standardized cover image.
+
+The boot presentation is a recreation based on hardware footage, not an official BIOS animation or a claim of frame/audio-identical output; [sources and asset attribution](NOTICE.md#boot-presentation) are recorded. The 480×320 logo mask is shared between browser and native targets. Build-time generators require Pillow/CairoSVG; generated assets are checked in, so those tools are not runtime dependencies.
 
 The browser server listens on loopback only, omits absolute paths from its catalogue and never serves ROM bytes. Model and motion exports are design assets; JavaScript/DOM code is not embedded in the native program.
 

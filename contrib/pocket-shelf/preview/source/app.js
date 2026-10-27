@@ -9,7 +9,7 @@ import { beginSwipe,moveSwipe,endSwipe } from './swipe.js';
 
 const el=id=>document.getElementById(id),stage=el('stage');
 const ui={title:el('game-title'),meta:el('game-meta'),index:el('game-index'),status:el('device-status'),hint:el('device-hint'),insert:el('insert'),previous:el('previous'),next:el('next'),back:el('back'),refresh:el('refresh')};
-const state={games:[],selected:0,scroll:0,mode:'browse',started:0,speed:1,reduced:matchMedia('(prefers-reduced-motion: reduce)').matches,sound:false,hover:-1,returnFrom:null,pickFrom:null,frame:0,facing:0,cardSlide:0,inspectBack:false,posePhase:null};
+const state={games:[],selected:0,scroll:0,mode:'browse',started:0,speed:1,reduced:matchMedia('(prefers-reduced-motion: reduce)').matches,sound:false,hover:-1,returnFrom:null,pickFrom:null,frame:0,facing:0,cardSlide:0,inspectBack:false,posePhase:null,presentation:0,focus:0,fade:0};
 let renderer,scene,camera,machine,rack,carts=[],artifacts,cancelled=false,mobile=false,lastGamepadPress=0,padWasDown=false,padAxis=0,audio;
 let dragging=null,shelfPointer=null,sceneDisposed=false;
 const raycaster=new THREE.Raycaster(),pointer=new THREE.Vector2(),clock=new THREE.Clock();
@@ -18,18 +18,21 @@ const pickStart=new THREE.Vector3(),pickRotation=new THREE.Quaternion();
 const turnY=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),Math.PI);
 function faceMachine(facing){
   state.facing=facing;
-  machine.quaternion.copy(machine.userData.restQuaternion).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),Math.PI*facing));
+  machine.position.copy(machine.userData.restPosition).lerp(mobile?new THREE.Vector3(0,.25,-.4):new THREE.Vector3(-.13,.58,0),state.presentation);
+  machine.scale.setScalar(machine.userData.restScale*(1+state.focus*(mobile?1.1:1.05)));
+  machine.quaternion.copy(machine.userData.restQuaternion).slerp(camera.quaternion,state.presentation).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),Math.PI*facing));
   scene.updateMatrixWorld(true);
 }
 function slotPosition(which){return machine.localToWorld(new THREE.Vector3(...SLOT[which]));}
-function rearAbove(){
-  const rotation=machine.userData.restQuaternion.clone().multiply(turnY);
-  return new THREE.Vector3(...SLOT.above).multiply(machine.scale).applyQuaternion(rotation).add(machine.position);
+function rearAbove(presentation=state.presentation){
+  const rotation=machine.userData.restQuaternion.clone().slerp(camera.quaternion,presentation).multiply(turnY);
+  const position=machine.userData.restPosition.clone().lerp(mobile?new THREE.Vector3(0,.25,-.4):new THREE.Vector3(-.13,.58,0),presentation);
+  return new THREE.Vector3(...SLOT.above).multiplyScalar(machine.userData.restScale).applyQuaternion(rotation).add(position);
 }
 function captureReturn(cart,seated=false){
   scene.updateMatrixWorld(true);
   const rotation=machine.getWorldQuaternion(new THREE.Quaternion());
-  return {position:cart.position.clone(),quaternion:cart.quaternion.clone(),scale:cart.scale.x,facing:state.facing,seated,localPosition:machine.worldToLocal(cart.position.clone()),localQuaternion:rotation.invert().multiply(cart.quaternion)};
+  return {position:cart.position.clone(),quaternion:cart.quaternion.clone(),scale:cart.scale.x,facing:state.facing,presentation:state.presentation,focus:state.focus,seated,localPosition:machine.worldToLocal(cart.position.clone()),localQuaternion:rotation.invert().multiply(cart.quaternion)};
 }
 
 function error(message){el('error').hidden=!message;el('error').textContent=message;}
@@ -75,13 +78,20 @@ function sound(type){
     const note=(freq,start,length,gain=.06)=>{const o=audio.createOscillator(),g=audio.createGain();o.type='sine';o.frequency.setValueAtTime(freq,now+start);g.gain.setValueAtTime(0,now+start);g.gain.linearRampToValueAtTime(gain,now+start+.006);g.gain.exponentialRampToValueAtTime(.001,now+start+length);o.connect(g).connect(audio.destination);o.start(now+start);o.stop(now+start+length+.01);};
     if(type==='select')note(460,0,.055,.025);
     if(type==='insert'){note(180,0,.055,.08);note(95,.035,.08,.045);}
-    if(type==='boot'){note(660,0,.16,.035);note(990,.12,.3,.03);}
+    if(type==='boot'){
+      state.bootSource?.stop();
+      (state.chimePromise ||= fetch('/assets/native/boot-chime.wav').then(r=>r.arrayBuffer()).then(b=>audio.decodeAudioData(b))).then(buffer=>{
+        if(state.mode!=='insert'||!state.sound)return;
+        const source=audio.createBufferSource(),gain=audio.createGain();source.buffer=buffer;source.playbackRate.value=1/state.speed;gain.gain.value=.4;source.connect(gain).connect(audio.destination);source.start();state.bootSource=source;
+      }).catch(()=>{});
+    }
   }catch{}
 }
 function insert(){
   if(!state.games.length||state.mode==='insert'||state.mode==='return'||shelfPointer)return;
   if(state.mode==='play'){back();return;}
   const cart=carts[state.selected];if(!cart)return;
+  stage.closest('.collection').classList.add('is-cinematic');state.insertFacing=state.facing;
   state.mode='insert';state.started=performance.now()/1000;
   cart.getWorldPosition(pickStart);cart.getWorldQuaternion(pickRotation);
   state.pickFrom={position:pickStart.clone(),quaternion:pickRotation.clone(),scale:cart.scale.x};
@@ -91,6 +101,7 @@ function back(){
   if(state.mode==='browse')return;
   if(state.mode==='return')return;
   const cart=carts[state.selected];if(!cart)return;
+  state.bootSource?.stop();state.bootSource=null;
   state.returnFrom=captureReturn(cart,state.mode==='play'||state.cardSlide>.02);
   state.mode='return';state.started=performance.now()/1000;updateScreen(machine,'off');describe();
 }
@@ -104,11 +115,12 @@ function arrange(){
   if(shelfPointer)cancelPointer();
   const width=stage.clientWidth,height=stage.clientHeight;mobile=width<650;
   renderer.setSize(width,height,false);
-  const aspect=width/height,worldWidth=mobile?Math.max(6.3,4.1*aspect):Math.max(11.75,3.8*aspect),halfHeight=worldWidth/aspect/2;
+  const baseHeight=height-(width<650?230:width<=1000?139:149),aspect=width/baseHeight,worldWidth=mobile?Math.max(6.3,4.1*aspect):Math.max(11.75,3.8*aspect),halfHeight=worldWidth/aspect/2;
+  camera.userData.worldWidth=worldWidth;
   camera.left=-worldWidth/2;camera.right=worldWidth/2;camera.top=halfHeight;camera.bottom=-halfHeight;
   if(mobile){camera.position.set(2,6.8,12);camera.lookAt(0,.25,-.4);machine.position.set(.08,.45,-2);machine.rotation.set(-.14,-.03,-.03);machine.scale.setScalar(.74);rack.position.set(0,-.035,1.05);rack.scale.setScalar(.69);}
   else {camera.position.set(3.2,5.2,12);camera.lookAt(-.13,.58,0);machine.position.set(2.43,.68,-.17);machine.rotation.set(-.13,-.14,-.055);machine.scale.setScalar(1);rack.position.set(-2.62,0,.15);rack.scale.setScalar(1);}
-  machine.userData.restQuaternion=machine.quaternion.clone();faceMachine(state.facing);
+  machine.userData.restPosition=machine.position.clone();machine.userData.restScale=machine.scale.x;machine.userData.restQuaternion=machine.quaternion.clone();faceMachine(state.facing);
   camera.updateProjectionMatrix();scene.updateMatrixWorld(true);
 }
 function disposeTree(group){
@@ -223,12 +235,14 @@ function animate(){
     if(state.hover===i&&!active)cart.position.y+=.045;
   }
   const cart=carts[state.selected];
+  if(cart)cart.traverse(o=>{for(const m of o.material?Array.isArray(o.material)?o.material:[o.material]:[])m.opacity=1;});
   if(cart&&state.mode==='insert'){
     const pose=insertPose(now-state.started,state.speed,state.reduced),start=state.pickFrom;
-    faceMachine(pose.facing);state.cardSlide=pose.slide;
+    state.presentation=pose.presentation;state.focus=pose.focus;state.fade=pose.fade;
+    faceMachine(['center','pick','align','insert'].includes(pose.phase)?state.insertFacing+(1-state.insertFacing)*pose.facing:pose.facing);state.cardSlide=pose.slide;
     const above=slotPosition('above'),inside=slotPosition('seated');
     machine.getWorldQuaternion(aligned);aligned.multiply(turnY);
-    if(pose.phase==='pick'){
+    if(pose.phase==='pick'||pose.phase==='center'){
       const t=pose.travel;cart.position.lerpVectors(start.position,above,t);cart.position.y+=Math.sin(t*Math.PI)*.48;
       cart.quaternion.copy(start.quaternion).slerp(aligned,t);cart.scale.setScalar(start.scale+(machine.scale.x-start.scale)*t);
     }else {cart.position.lerpVectors(above,inside,pose.slide);cart.quaternion.copy(aligned);cart.scale.setScalar(machine.scale.x);}
@@ -239,11 +253,11 @@ function animate(){
       if(pose.phase==='turn')ui.status.textContent='短卡带已插好，转回正面。';
     }
     if(pose.phase==='insert'&&pose.slide>.87&&!state.clickSound){sound('insert');state.clickSound=true;ui.status.textContent='咔哒。卡带就位。';}
-    if(pose.phase==='boot'){
+    if(pose.phase==='boot'||pose.phase==='fade'){
       if(!state.bootSound){sound('boot');state.bootSound=true;ui.status.textContent='掌机亮起来了。';}
       updateScreen(machine,'boot','',pose.boot);
     }
-    if(pose.phase==='ready'){state.mode='play';updateScreen(machine,'play',state.games[state.selected].title);describe();}
+    if(pose.phase==='ready'){state.fade=0;state.mode='play';updateScreen(machine,'play',state.games[state.selected].title);describe();}
   }else if(cart&&state.mode==='play'){
     // Keep the inserted card attached to the slot when the preview is resized.
     faceMachine(state.facing+((state.inspectBack?1:0)-state.facing)*(1-Math.exp(-dt*7)));
@@ -251,34 +265,49 @@ function animate(){
     machine.getWorldQuaternion(cart.quaternion);cart.quaternion.multiply(turnY);cart.scale.setScalar(machine.scale.x);
   }else if(cart&&state.mode==='return'){
     const homePose=home(state.selected),start=state.returnFrom,pose=ejectPose(now-state.started,state.speed,start.seated,state.reduced),t=pose.travel,targetFacing=state.inspectBack?1:0;
+    state.fade=0;state.presentation=start.presentation*(1-t);state.focus=start.focus*(start.seated?1-pose.turn:1-t);
     if(start.seated&&(pose.phase==='turn'||pose.phase==='lift')){
       faceMachine(start.facing+(1-start.facing)*pose.turn);
       cart.position.copy(machine.localToWorld(start.localPosition.clone().lerp(new THREE.Vector3(...SLOT.above),pose.lift)));
       machine.getWorldQuaternion(cart.quaternion);cart.quaternion.multiply(start.localQuaternion);cart.scale.setScalar(machine.scale.x);
     }else{
       faceMachine(start.seated?1+(targetFacing-1)*smooth(t):start.facing+(targetFacing-start.facing)*smooth(t));
-      const from=start.seated?rearAbove():start.position;
-      const rotation=start.seated?machine.userData.restQuaternion.clone().multiply(turnY).multiply(turnY):start.quaternion;
+      const from=start.seated?rearAbove(start.presentation):start.position;
+      const rotation=start.seated?machine.userData.restQuaternion.clone().slerp(camera.quaternion,start.presentation).multiply(turnY).multiply(turnY):start.quaternion;
       cart.position.lerpVectors(from,homePose.position,t);cart.position.y+=Math.sin(t*Math.PI)*.7;
-      cart.quaternion.copy(rotation).slerp(new THREE.Quaternion().setFromEuler(homePose.rotation),t);cart.scale.setScalar(start.scale+(homePose.scale-start.scale)*t);
+      cart.quaternion.copy(rotation).slerp(new THREE.Quaternion().setFromEuler(homePose.rotation),t);const fromScale=start.seated?machine.userData.restScale:start.scale;cart.scale.setScalar(fromScale+(homePose.scale-fromScale)*t);
     }
-    if(pose.phase==='ready'){state.mode='browse';state.returnFrom=null;state.cardSlide=0;describe();}
+    if(pose.phase==='ready'){state.mode='browse';state.returnFrom=null;state.cardSlide=0;state.presentation=state.focus=0;stage.closest('.collection').classList.remove('is-cinematic');describe();}
   }else {faceMachine(state.facing+((state.inspectBack?1:0)-state.facing)*(1-Math.exp(-dt*7)));}
-  const zoomTarget=state.mode==='insert'?(mobile ? .93 : .88):1;
-  camera.zoom+=(zoomTarget-camera.zoom)*(1-Math.exp(-dt*5));camera.updateProjectionMatrix();
+  const sceneryAlpha=1-state.presentation;
+  for(const group of [rack,...carts.filter((x,i)=>x&&i!==state.selected)]){
+    group.traverse(o=>{for(const m of o.material?Array.isArray(o.material)?o.material:[o.material]:[]){m.transparent=true;m.opacity=sceneryAlpha;}});
+  }
+  // Keep one full-sized canvas throughout. Only its GL viewport changes, so the final
+  // return frame and the first browsing frame have exactly the same projection.
+  const width=stage.clientWidth,height=stage.clientHeight;
+  const top=mobile?132:width<=1000?78:82,bottom=mobile?98:width<=1000?61:67;
+  const viewportHeight=height-(top+bottom)*(1-state.presentation),viewportY=bottom*(1-state.presentation);
+  const worldWidth=camera.userData.worldWidth,halfHeight=worldWidth*viewportHeight/width/2;
+  camera.left=-worldWidth/2;camera.right=worldWidth/2;camera.top=halfHeight;camera.bottom=-halfHeight;camera.zoom=1;camera.updateProjectionMatrix();
+  renderer.setViewport(0,viewportY,width,viewportHeight);
+  scene.userData.floor.position.y=-.45-state.focus*3;scene.userData.shadows.position.y=scene.userData.floor.position.y+.001;
+  scene.userData.floor.material.opacity=sceneryAlpha;scene.userData.shadows.material.opacity=.18*sceneryAlpha;
+  stage.closest('.collection').style.setProperty('--shelf-opacity',sceneryAlpha);
+  stage.style.setProperty('--boot-fade',state.fade);
   renderer.render(scene,camera);
 }
 function download(blob,name){const a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);}
 function exportMotion(){
   scene.updateMatrixWorld(true);
-  const restMatrix=new THREE.Matrix4().compose(machine.position,machine.userData.restQuaternion,machine.scale);
+  const restMatrix=new THREE.Matrix4().compose(machine.userData.restPosition,machine.userData.restQuaternion,new THREE.Vector3().setScalar(machine.userData.restScale));
   const data={
-    version:2,units:'scene units',millimetersPerSceneUnit:144.5/3.78,reference:REFERENCE,coordinateSystem:'right-handed Y-up',layout:mobile?'mobile':'desktop',
+    version:3,units:'scene units',millimetersPerSceneUnit:144.5/3.78,reference:REFERENCE,coordinateSystem:'right-handed Y-up',layout:mobile?'mobile':'desktop',
     timing:MOTION,durationMultiplier:state.speed,
     easing:{pick:'cubic ease-out',insert:'smoothstep',return:'cubic ease-out'},
     flightLift:.48,returnLift:.7,
     camera:{position:camera.position.toArray(),quaternion:camera.quaternion.toArray(),orthographic:{left:camera.left,right:camera.right,top:camera.top,bottom:camera.bottom}},
-    handheld:{node:machine.name,position:machine.position.toArray(),quaternion:machine.userData.restQuaternion.toArray(),scale:machine.scale.x},
+    handheld:{node:machine.name,position:machine.userData.restPosition.toArray(),quaternion:machine.userData.restQuaternion.toArray(),scale:machine.userData.restScale},
     slotAbove:new THREE.Vector3(...SLOT.above).applyMatrix4(restMatrix).toArray(),
     slotSeated:new THREE.Vector3(...SLOT.seated).applyMatrix4(restMatrix).toArray(),labelRotationY:SLOT.labelRotationY,
     cartridges:carts.flatMap((cart,i)=>{if(!cart)return [];const h=home(i);return [{node:cart.name,position:h.position.toArray(),rotation:h.rotation.toArray().slice(0,3),scale:h.scale,visible:h.visible}];}),
@@ -299,7 +328,7 @@ async function exportModels(){
       return copy;
     }
     const output=new THREE.Group();output.name='PocketShelfAssets';output.userData={hardware:REFERENCE.model,referenceMillimeters:REFERENCE.bodyMm,millimetersPerSceneUnit:144.5/3.78};
-    const handheld=copyNode(machine);handheld.quaternion.copy(machine.userData.restQuaternion);output.add(copyNode(rack),handheld);
+    const handheld=copyNode(machine);handheld.quaternion.copy(machine.userData.restQuaternion);handheld.position.copy(machine.userData.restPosition);handheld.scale.setScalar(machine.userData.restScale);output.add(copyNode(rack),handheld);
     for(let i=0;i<carts.length;i++){
       if(!carts[i])continue;const pose=home(i);if(!pose.visible)continue;
       const copy=copyNode(carts[i]);copy.visible=true;copy.position.copy(pose.position);copy.rotation.copy(pose.rotation);copy.scale.setScalar(pose.scale);output.add(copy);
@@ -319,15 +348,15 @@ async function setup(){
   const pmrem=new THREE.PMREMGenerator(renderer),room=new RoomEnvironment();scene.environment=pmrem.fromScene(room,.04).texture;room.dispose();pmrem.dispose();
   camera=new THREE.OrthographicCamera(-6,6,3,-3,.1,100);
   const sun=new THREE.DirectionalLight(0xfff9e7,2.1);sun.position.set(-3,8,6);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-8;sun.shadow.camera.right=8;sun.shadow.camera.top=6;sun.shadow.camera.bottom=-6;sun.shadow.normalBias=.025;sun.shadow.bias=-.00015;sun.shadow.radius=4;sun.shadow.blurSamples=8;scene.add(sun);scene.add(new THREE.HemisphereLight(0xfffbed,0xd4d8b9,.6));
-  const floor=new THREE.Mesh(new THREE.PlaneGeometry(200,200),new THREE.MeshBasicMaterial({color:0xf3f0e7,toneMapped:false}));floor.rotation.x=-Math.PI/2;floor.position.y=-.45;scene.add(floor);
-  const shadows=new THREE.Mesh(new THREE.PlaneGeometry(200,200),new THREE.ShadowMaterial({opacity:.18}));shadows.rotation.x=-Math.PI/2;shadows.position.y=-.449;shadows.receiveShadow=true;scene.add(shadows);
+  const floor=new THREE.Mesh(new THREE.PlaneGeometry(200,200),new THREE.MeshBasicMaterial({color:0xf3f0e7,toneMapped:false,transparent:true,depthWrite:false}));floor.rotation.x=-Math.PI/2;floor.position.y=-.45;scene.add(floor);
+  const shadows=new THREE.Mesh(new THREE.PlaneGeometry(200,200),new THREE.ShadowMaterial({opacity:.18,depthWrite:false}));shadows.rotation.x=-Math.PI/2;shadows.position.y=-.449;shadows.receiveShadow=true;scene.add(shadows);scene.userData.floor=floor;scene.userData.shadows=shadows;
   artifacts=new THREE.Group();artifacts.name='PocketShelfAssets';scene.add(artifacts);
   rack=makeShelf();machine=makeHandheld();artifacts.add(rack,machine);arrange();
   await loadGames();
   ui.previous.addEventListener('click',()=>select(state.selected-1));ui.next.addEventListener('click',()=>select(state.selected+1));ui.insert.addEventListener('click',insert);ui.back.addEventListener('click',back);ui.refresh.addEventListener('click',()=>{if(state.mode==='browse'&&!shelfPointer)loadGames();});
   window.addEventListener('blur',()=>cancelPointer());document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelPointer();});
   document.addEventListener('keydown',keyboard);renderer.domElement.addEventListener('pointerdown',pointerDown);renderer.domElement.addEventListener('pointermove',pointerMove);renderer.domElement.addEventListener('pointerup',pointerUp);renderer.domElement.addEventListener('pointercancel',cancelPointer);renderer.domElement.addEventListener('lostpointercapture',cancelPointer);
-  el('sound').addEventListener('click',()=>{state.sound=!state.sound;el('sound').setAttribute('aria-pressed',String(state.sound));el('sound').setAttribute('aria-label',state.sound?'关闭音效':'开启音效');el('sound').textContent=state.sound?'声音开':'声音关';if(state.sound)sound('select');});
+  el('sound').addEventListener('click',()=>{state.sound=!state.sound;el('sound').setAttribute('aria-pressed',String(state.sound));el('sound').setAttribute('aria-label',state.sound?'关闭音效':'开启音效');el('sound').textContent=state.sound?'声音开':'声音关';if(state.sound)sound('select');else{state.bootSource?.stop();state.bootSource=null;}});
   el('shell').addEventListener('change',e=>{machine.userData.shell.color.set(SHELLS[e.target.value]);machine.userData.back.color.set(SHELLS[e.target.value]).multiplyScalar(.81);});
   el('view-back').addEventListener('click',()=>{if(state.mode!=='browse'&&state.mode!=='play')return;state.inspectBack=!state.inspectBack;el('view-back').setAttribute('aria-pressed',String(state.inspectBack));el('view-back').textContent=state.inspectBack?'查看正面':'查看背面';});
   el('speed').addEventListener('input',e=>{state.speed=Number(e.target.value);el('speed-value').textContent=`${state.speed}×`;});

@@ -68,13 +68,17 @@ def validate(data):
             child_dir = sibling
 
     walk(0)
-    required = ['font-new.png', 'fileassoc.cfg.in', 'pocket-shelf/scene.psm',
+    required = ['font-new.png', 'fileassoc.cfg.in', 'pocket-shelf/scene.psm', 'pocket-shelf/boot-logo.png', 'pocket-shelf/boot-chime.wav',
                 'pocket-shelf/NotoSansSC-Regular.otf', 'pocket-shelf/FONT-LICENSE.txt']
     if not all(name in files for name in required) or not files['pocket-shelf/scene.psm'].startswith(b'PSM1'):
         raise ValueError('The NRO is missing native shelf assets')
     expected = (SHELF / 'assets/native/scene.psm').read_bytes()
     if files['pocket-shelf/scene.psm'] != expected:
         raise ValueError('The NRO does not contain the current model')
+    if files['pocket-shelf/boot-logo.png'] != (SHELF / 'assets/native/boot-logo.png').read_bytes():
+        raise ValueError('The NRO does not contain the current boot logo')
+    if files['pocket-shelf/boot-chime.wav'] != (SHELF / 'assets/native/boot-chime.wav').read_bytes():
+        raise ValueError('The NRO does not contain the current boot chime')
     return {name: len(blob) for name, blob in files.items()}
 
 
