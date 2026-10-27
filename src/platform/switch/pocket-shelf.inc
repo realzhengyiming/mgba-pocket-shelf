@@ -3,8 +3,64 @@
  */
 #include "platform/pocket-shelf/renderer.h"
 
+#include <stdarg.h>
+#include <time.h>
+
+static void _pocketLog(const char* format, ...) {
+	FILE* file = fopen("sdmc:/mGBA/pocket-shelf.log", "a");
+	if (!file)
+		return;
+	fprintf(file, "[%lld] ", (long long) time(NULL));
+	va_list args;
+	va_start(args, format);
+	vfprintf(file, format, args);
+	va_end(args);
+	fputc('\n', file);
+	fclose(file);
+}
+static int _pocketStartupError(struct mGUIRunner* runner, const char* error) {
+	_pocketLog("STARTUP FAILED: %s", error);
+	/* The original bitmap font works even if the shelf/CJK font failed. */
+	while (_running(runner)) {
+		_drawStart();
+		_guiPrepare();
+		GUIFontPrint(font, 64, 120, GUI_ALIGN_LEFT, 0xFFFFFFFF, "Pocket Shelf could not start");
+		const char* text = error;
+		for (unsigned row = 0; *text && row < 6; ++row) {
+			char line[79];
+			unsigned length = 0;
+			while (text[length] && text[length] != '\n' && length < sizeof(line) - 1)
+				++length;
+			memcpy(line, text, length);
+			line[length] = 0;
+			GUIFontPrint(font, 64, 210 + row * 40, GUI_ALIGN_LEFT, 0xFFFFFFFF, line);
+			text += length;
+			if (*text == '\n')
+				++text;
+		}
+		GUIFontPrint(font, 64, 560, GUI_ALIGN_LEFT, 0xFFFFFFFF, "Log: /mGBA/pocket-shelf.log");
+		GUIFontPrint(font, 64, 620, GUI_ALIGN_LEFT, 0xFFFFFFFF, "A/B: classic browser     +: exit");
+		_guiFinish();
+		eglSwapBuffers(s_display, s_surface);
+		padUpdate(&pad);
+		u64 down = padGetButtonsDown(&pad);
+		if (down & HidNpadButton_Plus)
+			return 0;
+		if (down & (HidNpadButton_A | HidNpadButton_B))
+			return -1;
+	}
+	return 0;
+}
+
 static int _selectPocketGame(struct mGUIRunner* runner, char* path, size_t capacity) {
 	static bool returning;
+	u64 totalMemory = 0, usedMemory = 0;
+	svcGetInfo(&totalMemory, InfoType_TotalMemorySize, CUR_PROCESS_HANDLE, 0);
+	svcGetInfo(&usedMemory, InfoType_UsedMemorySize, CUR_PROCESS_HANDLE, 0);
+	_pocketLog("PICKER entered; applet=%u memory=%llu/%llu MiB; GL=%s GLSL=%s renderer=%s",
+	           (unsigned) appletGetAppletType(), (unsigned long long) (usedMemory >> 20),
+	           (unsigned long long) (totalMemory >> 20), glGetString(GL_VERSION),
+	           glGetString(GL_SHADING_LANGUAGE_VERSION), glGetString(GL_RENDERER));
 	const char* root = mCoreConfigGetValue(&runner->config, "pocketShelfRoms");
 	if (!root || !*root)
 		root = "sdmc:/roms";
@@ -20,10 +76,10 @@ static int _selectPocketGame(struct mGUIRunner* runner, char* path, size_t capac
 	struct PSRenderer* renderer =
 	    PSRendererCreate("romfs:/pocket-shelf", "romfs:/pocket-shelf/NotoSansSC-Regular.otf", error, sizeof(error));
 	if (!renderer) {
-		printf("Pocket Shelf: %s; opening original browser\n", error);
 		PSCatalogClear(&catalog);
-		return -1;
+		return _pocketStartupError(runner, error);
 	}
+	_pocketLog("READY: native shelf initialized; games=%zu root=%s", catalog.count, root);
 	double origin = armGetSystemTick() / 19200000.;
 	if (returning && catalog.count)
 		PSStateReturn(&state, 0);
@@ -70,6 +126,7 @@ static int _selectPocketGame(struct mGUIRunner* runner, char* path, size_t capac
 			break;
 		}
 		if ((down & HidNpadButton_Minus) && state.mode == PS_BROWSE) {
+			_pocketLog("Classic browser requested with Minus");
 			result = -1;
 			break;
 		}
@@ -115,7 +172,7 @@ static int _selectPocketGame(struct mGUIRunner* runner, char* path, size_t capac
 			renderer = PSRendererCreate("romfs:/pocket-shelf", "romfs:/pocket-shelf/NotoSansSC-Regular.otf", error,
 			                            sizeof(error));
 			if (!renderer) {
-				result = -1;
+				result = _pocketStartupError(runner, error);
 				break;
 			}
 		}

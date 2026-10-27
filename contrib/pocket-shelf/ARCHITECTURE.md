@@ -14,7 +14,7 @@ Regenerate geometry with `tools/bake-model.py` using an export of the browser's 
 
 `src/platform/switch/pocket-shelf.inc` adapts Joy-Con, stick, single-finger shelf swipes/taps, application lifetime and docked/handheld output. It returns the exact selected path through an optional `mGUIRunner.selectGame` hook. `mGUIRunloop` then applies the same recent-game/config updates and calls the original `mGUIRun`.
 
-All shelf GPU resources, font state and catalogue allocations are released **before** starting the game. The emulator retains its own renderer, audio, input, pause, save and autosave code. Exiting the game returns to the picker and reconstructs the shelf, with the last cartridge's ejection animation. A shader/asset initialization failure, or pressing Minus, opens the original file picker.
+All shelf GPU resources, font state and catalogue allocations are released **before** starting the game. The emulator retains its own renderer, audio, input, pause, save and autosave code. Exiting the game returns to the picker and reconstructs the shelf, with the last cartridge's ejection animation. A shader/asset initialization failure shows a visible error panel and writes a persistent startup log; A/B then opens the original file picker. Pressing Minus from the shelf also opens the classic picker. Empty ROM arguments no longer bypass the picker.
 
 The shelf renders into its own depth-equipped framebuffer, then blits into the existing Switch surface/crop. It does not require changing the emulator's EGL configuration or resolution policy. Its teardown restores the GL state expected by the existing GUI. The NRO has a separate title and file association, so it can coexist with the original mGBA entry.
 
@@ -30,4 +30,4 @@ The `pocket-switch` preset enables `BUILD_POCKET_SHELF`. The pinned official dev
 
 CI checks the browser prototype, Linux native build/state tests and Switch NRO/package creation. Local tests additionally cover AddressSanitizer/UndefinedBehaviorSanitizer and Mac GPU rendering. No ROMs or private filesystem paths are committed.
 
-A successful host run and cross-build do not validate Switch hardware. Joy-Con mapping, sleep/HOME recovery, dock switching, save continuity and frame time remain on-device acceptance checks. See [SWITCH_TEST.md](SWITCH_TEST.md).
+An initial on-device run has now confirmed that the native shelf renders on Switch, with successful renderer initialization recorded in `/mGBA/pocket-shelf.log`. The four native GLES shaders also passed strict ESSL compilation/link validation. A successful host run or cross-build alone does not validate Switch hardware. Joy-Con mapping, sleep/HOME recovery, dock switching, save continuity and frame time remain on-device acceptance checks. See [SWITCH_TEST.md](SWITCH_TEST.md).

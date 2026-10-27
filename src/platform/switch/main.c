@@ -848,8 +848,15 @@ int main(int argc, char* argv[]) {
 
 	socketInitializeDefault();
 	nxlinkStdio();
-	eglInit();
-	romfsInit();
+	bool graphicsReady = eglInit();
+	Result romfsResult = romfsInit();
+#ifdef ENABLE_POCKET_SHELF
+	_pocketLog("BOOT diagnostic-v1; argc=%d EGL=%d RomFS=0x%x", argc, graphicsReady, romfsResult);
+	for (int argument = 0; argument < argc; ++argument)
+		_pocketLog("argv[%d]=%s", argument, argv[argument] ? argv[argument] : "(null)");
+#else
+	UNUSED(graphicsReady); UNUSED(romfsResult);
+#endif
 	psmInitialize();
 
 	const AudioRendererConfig audren = {
@@ -1107,7 +1114,10 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
-	if (argc > 1) {
+	if (argc > 1 && argv[1] && argv[1][0]) {
+#ifdef ENABLE_POCKET_SHELF
+		_pocketLog("Direct ROM launch requested: %s", argv[1]);
+#endif
 		mGUILoadInputMaps(&runner);
 		mGUIRun(&runner, argv[1]);
 	} else {

@@ -6,7 +6,7 @@ A cartridge-style frontend for this mGBA fork: browse your ROM folder, choose a 
 
 ## Current status / 当前状态
 
-**The C/OpenGL ES frontend is integrated into the Switch version and cross-compiles to an NRO. Switch hardware testing is still pending.**
+**The C/OpenGL ES frontend is integrated into the Switch version. An initial Switch test confirmed the native shelf displays correctly; broader hardware acceptance checks continue.**
 
 - The shared native C layer scans ROM folders recursively, preserves actual filenames and reads same-name PNG covers. Missing covers get an original generated label.
 - Horizontal touch/mouse swipes track the finger, snap with a short fling, and stay bounded at the ends. Taps and vertical/cancelled gestures are kept separate from game launch.
@@ -16,7 +16,7 @@ A cartridge-style frontend for this mGBA fork: browse your ROM folder, choose a 
 - The desktop debugger uses the same renderer/state machine and launches the SDL emulator. Actual Mac launch/return and a 240-frame ROM smoke test passed.
 - CI builds desktop and Switch targets. The package script checks the actual NRO's identity and embedded assets before producing the SD layout and checksum.
 
-原生版已经接入；当前是等待 Switch 实机验收的测试版。实机流畅度、睡眠恢复、底座切换和存档连续性还要逐项确认。原生版暂未移植网页的自由拖拽、声音和换色；封面先支持本地 PNG，JPEG 和自动联网匹配尚未接入。
+原生版已经接入，并已在 Switch 上成功显示卡带架。当前仍是测试版；音频、按键、睡眠恢复、底座切换和存档连续性继续逐项验收。原生版暂未移植网页的自由拖拽、声音和换色；封面先支持本地 PNG，JPEG 和自动联网匹配尚未接入。
 
 [安装和今晚测试步骤](SWITCH_TEST.md) · [Architecture / integration details](ARCHITECTURE.md)
 

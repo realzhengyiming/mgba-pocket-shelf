@@ -88,7 +88,9 @@ static GLuint compile(GLenum type, const char* source, char* error, size_t cap) 
 	GLint ok;
 	glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
 	if (!ok) {
-		glGetShaderInfoLog(shader, (GLsizei) cap, NULL, error);
+		char detail[200] = { 0 };
+		glGetShaderInfoLog(shader, sizeof(detail), NULL, detail);
+		snprintf(error, cap, "%s shader: %s", type == GL_VERTEX_SHADER ? "Vertex" : "Fragment", detail);
 		glDeleteShader(shader);
 		return 0;
 	}
@@ -118,7 +120,9 @@ static GLuint program(const char* vs, const char* fs, char* error, size_t cap, b
 	GLint ok;
 	glGetProgramiv(p, GL_LINK_STATUS, &ok);
 	if (!ok) {
-		glGetProgramInfoLog(p, (GLsizei) cap, NULL, error);
+		char detail[200] = { 0 };
+		glGetProgramInfoLog(p, sizeof(detail), NULL, detail);
+		snprintf(error, cap, "%s link: %s", ui ? "UI" : "Scene", detail);
 		glDeleteProgram(p);
 		return 0;
 	}
@@ -266,8 +270,10 @@ static bool loadModel(struct PSRenderer* r) {
 		if (b->texture >= 0 && !r->textures[b->texture]) {
 			snprintf(path, sizeof(path), "%s/texture-%02d.png", r->assets, b->texture);
 			r->textures[b->texture] = pngTexture(path, false);
-			if (!r->textures[b->texture])
+			if (!r->textures[b->texture]) {
+				snprintf(r->error, sizeof(r->error), "Cannot load model texture %d", b->texture);
 				goto done;
+			}
 		}
 	}
 	ok = true;
@@ -512,8 +518,11 @@ struct PSRenderer* PSRendererCreate(const char* assets, const char* font, char* 
 	r->uiColor = glGetUniformLocation(r->ui, "color");
 	r->uiTexture = glGetUniformLocation(r->ui, "image");
 	r->uiMode = glGetUniformLocation(r->ui, "mode");
-	if (FT_Init_FreeType(&r->ft) || FT_New_Face(r->ft, font, 0, &r->face)) {
-		snprintf(r->error, sizeof(r->error), "Cannot load the bundled CJK font");
+	FT_Error fontError = FT_Init_FreeType(&r->ft);
+	if (!fontError)
+		fontError = FT_New_Face(r->ft, font, 0, &r->face);
+	if (fontError) {
+		snprintf(r->error, sizeof(r->error), "CJK font open failed (FreeType %d)", fontError);
 		goto fail;
 	}
 	unsigned char* blank = calloc(ATLAS, ATLAS);
@@ -539,8 +548,10 @@ struct PSRenderer* PSRendererCreate(const char* assets, const char* font, char* 
 	glBindRenderbuffer(GL_RENDERBUFFER, r->depth);
 	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, WIDTH, HEIGHT);
 	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, r->depth);
-	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-		snprintf(r->error, sizeof(r->error), "Cannot create the shelf framebuffer");
+	GLenum framebufferStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+	if (framebufferStatus != GL_FRAMEBUFFER_COMPLETE) {
+		snprintf(r->error, sizeof(r->error), "Framebuffer status 0x%x (GL error 0x%x)", framebufferStatus,
+		         glGetError());
 		goto fail;
 	}
 	if (!loadModel(r))
