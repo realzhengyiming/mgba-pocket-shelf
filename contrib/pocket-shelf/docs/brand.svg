@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 124" role="img" aria-labelledby="title desc">
+  <title id="title">Pocket Shelf · 口袋卡带架</title>
+  <desc id="desc">An olive cartridge icon and the Pocket Shelf wordmark on a warm paper background.</desc>
+  <rect width="720" height="124" rx="22" fill="#f3f0e7"/>
+  <g transform="translate(41 29) rotate(-10 28 34)" fill="#697d51">
+    <rect x="9" y="0" width="37" height="10" rx="3"/>
+    <rect x="2" y="7" width="51" height="62" rx="8"/>
+    <rect x="9" y="16" width="37" height="35" rx="4" fill="#e4e8d3"/>
+    <path d="M13 53h5v10h-5zm12 0h5v10h-5zm12 0h5v10h-5z" fill="#d4cda7"/>
+  </g>
+  <text x="117" y="66" font-family="Arial, Helvetica, sans-serif" font-size="45" font-weight="700" letter-spacing="-2" fill="#39483d">pocket shelf</text>
+  <text x="120" y="92" font-family="Arial, Helvetica, sans-serif" font-size="11" letter-spacing="3.1" fill="#7b896e">A LITTLE SHELF, A LOT OF ADVENTURES.</text>
+  <path d="M526 38v49" stroke="#d7d9c8"/>
+  <text x="550" y="59" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" letter-spacing="1.2" fill="#697d51">mGBA</text>
+  <text x="550" y="80" font-family="Arial, Helvetica, sans-serif" font-size="11" letter-spacing="1" fill="#7b896e">SWITCH HOMEBREW</text>
+</svg>

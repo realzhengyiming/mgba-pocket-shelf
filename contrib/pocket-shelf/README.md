@@ -1,8 +1,12 @@
-# Pocket Shelf / 口袋卡带架
+# Pocket Shelf · 开发与构建
 
 A cartridge-style frontend for this mGBA fork: browse your ROM folder, choose a short GBA cartridge, insert it into the back of an AGB-001-style handheld, then launch the game.
 
-![Native C/OpenGL frontend on Mac](docs/native-preview.png)
+[项目首页 / Overview](../../README.md) · [Switch 安装与操作](SWITCH_TEST.md) · [原生 Mac 调试](#native-desktop-debugging) · [Switch 编译](#switch-build-and-sd-package) · [网页预览](#browser-design-reference--网页原型)
+
+![原生卡带架：选卡、插卡、开机与返回](docs/pocket-shelf-demo.gif)
+
+*实际 C/OpenGL 渲染器在 Mac 上导出的动画，使用不含 ROM 的示例元数据；不是 Switch 实机录像，游戏运行段未展示。GIF 无声。[素材来源与重新生成方法](docs/MEDIA.md)。*
 
 ## Current status / 当前状态
 
@@ -19,7 +23,7 @@ A cartridge-style frontend for this mGBA fork: browse your ROM folder, choose a 
 
 原生版已经接入，并已在 Switch 上成功显示卡带架。当前仍是测试版；音频、按键、睡眠恢复、底座切换和存档连续性继续逐项验收。原生版暂未移植网页的自由拖拽和换色；开场和合成提示音已接入；封面支持同名 PNG 或按 GBA 编号读取本地缓存，JPEG 和自动联网下载尚未接入。
 
-[安装和今晚测试步骤](SWITCH_TEST.md) · [Architecture / integration details](ARCHITECTURE.md)
+[安装与实机验收步骤](SWITCH_TEST.md) · [Architecture / integration details](ARCHITECTURE.md)
 
 ## Boot presentation and covers
 
@@ -27,7 +31,16 @@ The handheld centers before cartridge pickup, faces rearward for insertion, turn
 
 Standard GBA ROM headers contain title/game-code fields, not a standard box-art image. Put a PNG beside a ROM with the same basename for a manual override, or cache an image at `roms/GBA/covers/BPEE.png` for games whose validated header code is BPEE. The browser and native catalogue use the same priority. Hacks may reuse a base game's code, so use the per-ROM override when artwork differs. No online scraping happens on Switch; missing images keep the generated label. User ROMs, downloaded commercial artwork and saves are not included in this repository.
 
-![Centered boot preview](docs/boot-preview.png)
+<table>
+  <tr>
+    <td width="50%"><img src="docs/native-shelf.png" alt="原生卡带浏览界面" /></td>
+    <td width="50%"><img src="docs/native-boot.png" alt="居中的掌机与开机字样" /></td>
+  </tr>
+  <tr>
+    <td align="center">原生浏览界面 · Native shelf</td>
+    <td align="center">居中开场 · Centered boot</td>
+  </tr>
+</table>
 
 ## Native desktop debugging
 
