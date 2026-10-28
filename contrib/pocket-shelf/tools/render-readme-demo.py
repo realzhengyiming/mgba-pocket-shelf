@@ -37,9 +37,9 @@ subprocess.run([
     'ffmpeg', '-hide_banner', '-loglevel', 'warning', '-y',
     '-framerate', '15', '-i', str(frames / 'frame-%04d.png'),
     '-filter_complex',
-    '[0:v]scale=960:-1:flags=lanczos,split[a][b];'
-    '[a]palettegen=stats_mode=diff[p];'
+    '[0:v]scale=960:-1:flags=lanczos,format=rgb24,split[a][b];'
+    '[a]palettegen=stats_mode=full:reserve_transparent=0[p];'
     '[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle',
-    '-loop', '0', str(docs / 'pocket-shelf-demo.gif'),
+    '-gifflags', '+offsetting-transdiff', '-loop', '0', str(docs / 'pocket-shelf-demo.gif'),
 ], check=True)
 print(f'README media updated in {docs.relative_to(ROOT)}')

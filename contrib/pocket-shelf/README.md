@@ -4,7 +4,7 @@ A cartridge-style frontend for this mGBA fork: browse your ROM folder, choose a 
 
 [项目首页 / Overview](../../README.md) · [Switch 安装与操作](SWITCH_TEST.md) · [原生 Mac 调试](#native-desktop-debugging) · [Switch 编译](#switch-build-and-sd-package) · [网页预览](#browser-design-reference--网页原型)
 
-![原生卡带架：选卡、插卡、开机与返回](docs/pocket-shelf-demo.gif)
+![原生卡带架：选卡、插卡、开机与返回](docs/pocket-shelf-demo.gif?v=2)
 
 *实际 C/OpenGL 渲染器在 Mac 上导出的动画，使用不含 ROM 的示例元数据；不是 Switch 实机录像，游戏运行段未展示。GIF 无声。[素材来源与重新生成方法](docs/MEDIA.md)。*
 

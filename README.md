@@ -17,7 +17,7 @@ A native cartridge shelf for mGBA on Nintendo Switch.
 
 ## 效果预览
 
-![原生卡带架：选卡、背面插卡、居中开机与返回动画](contrib/pocket-shelf/docs/pocket-shelf-demo.gif)
+![原生卡带架：选卡、背面插卡、居中开机与返回动画](contrib/pocket-shelf/docs/pocket-shelf-demo.gif?v=2)
 
 <p align="center"><b>选一盘 → 从机背插入 → 转回正面 → 开机 → 放回架子</b></p>
 
